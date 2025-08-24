@@ -1,0 +1,17 @@
+# Avi Multi-Agent Launch Commands
+# Run these commands in separate terminals
+
+# Terminal 1 - Backend Specialist
+claude-code --session "avi-backend" "I am the Backend Specialist for Avi. Reading coordination/backend-tasks.md to begin Ollama integration in ai_service.py"
+
+# Terminal 2 - Frontend Specialist
+claude-code --session "avi-frontend" "I am the Frontend Specialist for Avi. Reading coordination/frontend-tasks.md to create model selection UI components"
+
+# Terminal 3 - DevOps Specialist  
+claude-code --session "avi-devops" "I am the DevOps Specialist for Avi. Reading coordination/devops-tasks.md to set up Ollama configuration and testing"
+
+# Terminal 4 - AI Optimizer
+claude-code --session "avi-ai" "I am the AI Optimizer for Avi. Reading coordination/ai-optimization-tasks.md to enhance local model performance"
+
+# Current Terminal - Architecture Orchestrator
+# This session continues as the coordination hub

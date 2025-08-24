@@ -1,0 +1,92 @@
+#!/bin/bash
+
+# Able Simple macOS App Launcher with hardcoded paths
+
+# Project directory
+ABLE_PROJECT_DIR="/Users/will/AVI BUILD/Able3_Main_WithVoiceMode"
+
+# Node.js paths (hardcoded for reliability)
+NODE_DIR="/Users/will/.nvm/versions/node/v24.4.0/bin"
+export PATH="$NODE_DIR:$PATH"
+
+# Function to show error dialog
+show_error() {
+    osascript -e "display alert \"Able Error\" message \"$1\" buttons {\"OK\"} default button \"OK\""
+}
+
+# Function to show notification
+show_info() {
+    osascript -e "display notification \"$1\" with title \"Able\" sound name \"Glass\""
+}
+
+# Change to project directory
+cd "$ABLE_PROJECT_DIR" || {
+    show_error "Cannot access Able directory: $ABLE_PROJECT_DIR"
+    exit 1
+}
+
+# Check required files
+if [[ ! -f "launch_able.py" ]]; then
+    show_error "launch_able.py not found in: $ABLE_PROJECT_DIR"
+    exit 1
+fi
+
+# Check Python 3
+if ! command -v python3 &> /dev/null; then
+    show_error "Python 3 is required. Install from python.org or: brew install python3"
+    exit 1
+fi
+
+# Check Node.js/npm with hardcoded path
+if [[ ! -f "$NODE_DIR/npm" ]]; then
+    show_error "npm not found at: $NODE_DIR/npm\n\nNode.js may need to be reinstalled."
+    exit 1
+fi
+
+# Show startup notification
+show_info "Starting Able..."
+
+# Create log file
+LOG_FILE="$ABLE_PROJECT_DIR/able_simple_dock.log"
+echo "$(date): Starting Able with simple dock app" > "$LOG_FILE"
+echo "Node.js path: $NODE_DIR" >> "$LOG_FILE"
+echo "npm path: $NODE_DIR/npm" >> "$LOG_FILE"
+echo "npm version: $($NODE_DIR/npm --version 2>/dev/null)" >> "$LOG_FILE"
+
+# Launch Able
+echo "Launching Able..." >> "$LOG_FILE"
+python3 launch_able.py >> "$LOG_FILE" 2>&1 &
+LAUNCH_PID=$!
+
+# Wait and check
+sleep 5
+if ! kill -0 $LAUNCH_PID 2>/dev/null; then
+    show_error "Failed to start Able. Check able_simple_dock.log for details."
+    exit 1
+fi
+
+# Wait for services
+sleep 15
+
+# Open browser
+if curl -s "http://localhost:3001" > /dev/null 2>&1; then
+    echo "Opening browser - services ready" >> "$LOG_FILE"
+    open "http://localhost:3001"
+    show_info "Able is ready! Browser opening..."
+else
+    echo "Opening browser - services still starting" >> "$LOG_FILE"  
+    open "http://localhost:3001"
+    show_info "Able starting... Browser opened."
+fi
+
+# Monitor processes
+echo "Monitoring processes..." >> "$LOG_FILE"
+while true; do
+    if ! pgrep -f "main.py" > /dev/null 2>&1 && ! pgrep -f "http.server 3001" > /dev/null 2>&1; then
+        echo "$(date): Processes stopped" >> "$LOG_FILE"
+        break
+    fi
+    sleep 15
+done
+
+echo "$(date): Dock app exiting" >> "$LOG_FILE"

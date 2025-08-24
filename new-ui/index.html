@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Able mk I</title>
+    <link rel="stylesheet" href="styles.css?v=1.2">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-left">
+                <div class="app-title">Able mk I</div>
+            </div>
+            <div class="header-right">
+                <div class="model-selector-container">
+                    <div class="model-selector" id="modelSelector">CHOOSE MODEL</div>
+                    <div class="model-dropdown" id="modelDropdown">
+                        <!-- Model options will be populated here -->
+                    </div>
+                </div>
+                <button class="mcp-toggle" id="mcpToggle" title="Toggle MCP Tools">
+                    🔧 MCP
+                </button>
+                <button class="shutdown-button" id="shutdownButton" title="Shutdown Able Services">
+                    🔴 Shutdown
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Left Panel -->
+            <div class="left-panel">
+                <!-- Add Web Content -->
+                <div class="section">
+                    <h3>Add Web Content</h3>
+                    <div class="input-group">
+                        <span class="icon">🌐</span>
+                        <input type="url" id="webUrl" placeholder="Enter URL...">
+                    </div>
+                </div>
+
+                <!-- Upload Documents -->
+                <div class="section">
+                    <h3>Upload Documents</h3>
+                    <div class="upload-area" id="uploadArea">
+                        <span class="icon">⬆</span>
+                        <span>Drop files here or click to browse</span>
+                        <input type="file" id="fileInput" multiple accept=".pdf" hidden>
+                    </div>
+                </div>
+
+                <!-- Library -->
+                <div class="section">
+                    <h3>📁 Library</h3>
+                    <div class="library-list" id="libraryList">
+                        <!-- Documents will be populated here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Panel -->
+            <div class="right-panel">
+                <!-- System Status -->
+                <div class="section">
+                    <h3>System Status:</h3>
+                    <div class="status-display" id="statusDisplay">
+                        <div class="status-indicator" id="statusIndicator"></div>
+                        <span id="statusText">Checking...</span>
+                    </div>
+                </div>
+
+                <!-- Chat Area -->
+                <div class="chat-section">
+                    <div class="chat-messages" id="chatMessages">
+                        <!-- Chat messages will appear here -->
+                    </div>
+                    
+                    <div class="chat-input-container">
+                        <input type="text" id="chatInput" placeholder="Chat here..." class="chat-input">
+                        <button id="sendButton" class="send-button">▶</button>
+                        <button id="voiceButton" class="voice-button">🎤</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MCP Configuration Modal -->
+    <div class="modal" id="mcpModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>MCP Configuration</h3>
+                <span class="close" id="mcpModalClose">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="config-section">
+                    <h4>Filesystem Access</h4>
+                    <input type="text" id="filesystemRoot" placeholder="Root directory path..." class="config-input">
+                    <small>Directory path for file operations</small>
+                </div>
+                <div class="config-section">
+                    <h4>Git Repositories</h4>
+                    <textarea id="gitRepos" placeholder="Repository paths (one per line)..." class="config-textarea"></textarea>
+                    <small>Git repository paths for version control operations</small>
+                </div>
+                <div class="config-section">
+                    <h4>SQLite Databases</h4>
+                    <textarea id="sqliteDbs" placeholder="Database paths (one per line)..." class="config-textarea"></textarea>
+                    <small>SQLite database paths for queries</small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="mcpModalCancel">Cancel</button>
+                <button class="btn-primary" id="mcpModalSave">Save Configuration</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

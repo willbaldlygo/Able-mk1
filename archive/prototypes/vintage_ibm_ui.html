@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vintage Educational Interface</title>
+  <link href="https://fonts.googleapis.com/css2?family=Special+Elite&family=Courier+Prime:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      /* Vintage cardboard and paper tones with warmth */
+      --cardboard-base: #d8c8a4;
+      --cardboard-mid: #cdbb9a;
+      --cardboard-dark: #bcab89;
+      --manila-folder: #f4e8cb;
+      --index-card: #f7f2e5;
+      --library-beige: #eadfc2;
+      
+      /* Vintage ink colors with warmth */
+      --ink-blue: #2c4f6b;
+      --ink-red: #8b3a3a;
+      --ink-green: #4a6b4a;
+      --ink-purple: #6b4a6b;
+      --typewriter-black: #2d2d2d;
+      
+      /* IBM poster colors with golden warmth */
+      --ibm-blue: #1e3a5f;
+      --academic-brown: #8d6a4a;
+      --library-green: #5a6d5a;
+      --file-tab-orange: #d49a5a;
+      
+      /* Effects */
+      --shadow: 0 8px 24px rgba(0,0,0,0.15);
+      --inner-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
+      --raised-shadow: 0 4px 12px rgba(0,0,0,0.12);
+      --text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+      --radius: 16px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: 'Courier Prime', 'Special Elite', monospace;
+      color: var(--typewriter-black);
+      padding: 40px;
+      
+      /* Multi-layered cardboard texture background */
+      background: 
+        /* Paper grain */
+        radial-gradient(circle at 25% 25%, rgba(139, 69, 19, 0.03) 1px, transparent 1px),
+        radial-gradient(circle at 75% 75%, rgba(218, 165, 32, 0.02) 1px, transparent 1px),
+        /* Cardboard texture */
+        linear-gradient(45deg, transparent 25%, rgba(139, 69, 19, 0.015) 25%, rgba(139, 69, 19, 0.015) 50%, transparent 50%, transparent 75%, rgba(218, 165, 32, 0.01) 75%),
+        /* Base cardboard color with golden warmth */
+        linear-gradient(135deg, var(--cardboard-base) 0%, #dccfa8 30%, var(--cardboard-mid) 50%, #d1c49d 70%, var(--cardboard-dark) 100%);
+      background-size: 
+        20px 20px,
+        15px 15px,
+        8px 8px,
+        100% 100%;
+      background-attachment: fixed;
+    }
+
+    /* Vintage paper aging effect */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background: 
+        /* Age spots and stains with golden tones */
+        radial-gradient(ellipse 300px 200px at 20% 30%, rgba(218, 165, 32, 0.06) 0%, transparent 50%),
+        radial-gradient(ellipse 200px 300px at 80% 70%, rgba(139, 69, 19, 0.05) 0%, transparent 50%),
+        radial-gradient(ellipse 400px 100px at 50% 90%, rgba(218, 165, 32, 0.03) 0%, transparent 50%),
+        /* Edge darkening */
+        radial-gradient(ellipse at center, rgba(0,0,0,0) 60%, rgba(0,0,0,0.05) 80%, rgba(0,0,0,0.08) 100%);
+      z-index: 0;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr 1fr;
+      gap: 28px;
+      max-width: 1400px;
+      margin: 0 auto;
+      aspect-ratio: 16/9;
+      position: relative;
+      z-index: 1;
+    }
+
+    .panel {
+      position: relative;
+      border-radius: var(--radius);
+      padding: 20px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      box-shadow: var(--shadow);
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+      overflow: hidden;
+    }
+
+    .panel:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 12px 32px rgba(0,0,0,0.2);
+    }
+
+    /* Unique vintage card backgrounds with golden warmth */
+    .web-content-card {
+      background: linear-gradient(135deg, var(--manila-folder) 0%, #f2e6c9 50%, #eddebc 100%);
+      border: 4px solid var(--ink-blue);
+    }
+
+    .questions-card {
+      background: linear-gradient(135deg, var(--index-card) 0%, #f4e9dc 50%, #efe4d7 100%);
+      border: 4px solid var(--ink-purple);
+    }
+
+    .library-card {
+      background: linear-gradient(135deg, var(--library-beige) 0%, #e7dbbf 50%, #e2d6ba 100%);
+      border: 4px solid var(--ink-red);
+    }
+
+    .input-card {
+      background: linear-gradient(135deg, #f2e8cb 0%, #ece2b5 50%, #e6dcaf 100%);
+      border: 4px solid var(--library-green);
+    }
+
+    /* Vintage paper texture overlay for each card */
+    .panel::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      border-radius: calc(var(--radius) - 4px);
+      background: 
+        /* Paper fiber texture with golden tones */
+        radial-gradient(circle at 30% 30%, rgba(218, 165, 32, 0.03) 1px, transparent 1px),
+        radial-gradient(circle at 70% 70%, rgba(139, 69, 19, 0.02) 1px, transparent 1px),
+        /* Subtle grain */
+        linear-gradient(45deg, transparent 48%, rgba(218, 165, 32, 0.008) 49%, rgba(218, 165, 32, 0.008) 51%, transparent 52%);
+      background-size: 12px 12px, 8px 8px, 4px 4px;
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    .panel > * {
+      position: relative;
+      z-index: 2;
+    }
+
+    .title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin: 0 0 12px;
+      text-shadow: var(--text-shadow);
+      font-family: 'Special Elite', monospace;
+      letter-spacing: 0.5px;
+    }
+
+    .title svg {
+      width: 32px;
+      height: 32px;
+      flex-shrink: 0;
+      filter: drop-shadow(1px 1px 2px rgba(0,0,0,0.1));
+    }
+
+    .inner {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    /* Vintage form elements */
+    .input-bar {
+      background: linear-gradient(135deg, #faf4e8 0%, #f4eedb 100%);
+      border: 3px solid var(--library-green);
+      border-radius: 10px;
+      padding: 12px 16px;
+      box-shadow: var(--inner-shadow);
+      transition: all 0.3s ease;
+    }
+
+    .input-bar:hover {
+      background: linear-gradient(135deg, #fcf6ea 0%, #f6f0dd 100%);
+      border-color: var(--academic-brown);
+    }
+
+    .input-field {
+      width: 100%;
+      min-height: 40px;
+      border: none;
+      background: transparent;
+      font-size: 1rem;
+      font-family: 'Courier Prime', monospace;
+      color: var(--typewriter-black);
+      outline: none;
+      resize: none;
+    }
+
+    /* Document upload area */
+    .upload {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      border: 3px dashed var(--ink-red);
+      background: linear-gradient(135deg, rgba(234, 199, 163, 0.6) 0%, rgba(230, 192, 154, 0.7) 100%);
+      border-radius: 12px;
+      padding: 20px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      position: relative;
+    }
+
+    .upload::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      border-radius: 9px;
+      background: 
+        radial-gradient(circle at 20% 20%, rgba(218, 165, 32, 0.02) 1px, transparent 1px),
+        radial-gradient(circle at 80% 80%, rgba(139, 58, 58, 0.02) 1px, transparent 1px);
+      background-size: 15px 15px, 10px 10px;
+      pointer-events: none;
+    }
+
+    .upload:hover {
+      background: linear-gradient(135deg, rgba(234, 199, 163, 0.8) 0%, rgba(230, 192, 154, 0.9) 100%);
+      border-color: var(--file-tab-orange);
+      transform: scale(1.02);
+    }
+
+    .upload-content {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 1.1rem;
+      margin-bottom: 8px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .upload-subtitle {
+      font-size: 0.85rem;
+      color: rgba(45, 45, 45, 0.7);
+      font-style: italic;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Robot area */
+    .robot-area {
+      flex: 1;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .robot-icon {
+      width: 80px;
+      height: 80px;
+      transition: transform 0.3s ease;
+      filter: drop-shadow(2px 2px 4px rgba(0,0,0,0.15));
+    }
+
+    .robot-icon:hover {
+      transform: scale(1.1) rotate(3deg);
+    }
+
+    /* Robot animations */
+    @keyframes robotBlink {
+      0%, 92%, 100% { 
+        opacity: 1; 
+      }
+      94%, 96% { 
+        opacity: 0.1; 
+      }
+    }
+
+    @keyframes antennaGlow {
+      0%, 100% { 
+        filter: drop-shadow(2px 2px 4px rgba(0,0,0,0.15)); 
+      }
+      50% { 
+        filter: drop-shadow(2px 2px 4px rgba(0,0,0,0.15)) drop-shadow(0 0 8px rgba(212, 131, 74, 0.4)); 
+      }
+    }
+
+    @keyframes chestPulse {
+      0%, 100% { 
+        opacity: 0.8; 
+      }
+      50% { 
+        opacity: 1; 
+      }
+    }
+
+    /* Apply animations to robot parts */
+    .robot-icon circle[cy="25"] {
+      animation: robotBlink 4s infinite;
+    }
+
+    .robot-icon circle[cy="25"]:first-of-type {
+      animation-delay: 0s;
+    }
+
+    .robot-icon circle[cy="25"]:nth-of-type(2) {
+      animation-delay: 0.1s;
+    }
+
+    .robot-icon circle[cy="5"] {
+      animation: antennaGlow 3s infinite ease-in-out;
+    }
+
+    .robot-icon circle[cy="47"] {
+      animation: chestPulse 2s infinite ease-in-out;
+    }
+
+    .robot-icon circle[cy="47"]:last-of-type {
+      animation-delay: 1s;
+    }
+
+    /* Bottom right input panel */
+    .input-panel {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .input-section {
+      flex: 1;
+    }
+
+    .mic-box {
+      background: linear-gradient(135deg, #f7edd3 0%, #f2e8c4 100%);
+      border: 3px solid var(--library-green);
+      border-radius: 12px;
+      padding: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      box-shadow: var(--raised-shadow);
+    }
+
+    .mic-box:hover {
+      background: linear-gradient(135deg, #f9efd5 0%, #f4eac6 100%);
+      border-color: var(--academic-brown);
+      transform: scale(1.05);
+      box-shadow: 0 6px 16px rgba(0,0,0,0.15);
+    }
+
+    .microphone {
+      width: 28px;
+      height: 28px;
+      transition: transform 0.2s ease;
+    }
+
+    .mic-box:active .microphone {
+      transform: scale(0.95);
+    }
+
+    /* Vintage styling adjustments */
+    .vintage-text {
+      font-family: 'Special Elite', monospace;
+      letter-spacing: 0.3px;
+    }
+
+    /* Responsive design */
+    @media (max-width: 1200px) {
+      .layout {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto auto auto auto;
+        aspect-ratio: auto;
+        gap: 20px;
+      }
+      
+      body {
+        padding: 20px;
+      }
+      
+      .title {
+        font-size: 1.3rem;
+      }
+    }
+
+    @media (max-width: 768px) {
+      .input-panel {
+        flex-direction: column;
+        gap: 12px;
+      }
+      
+      .input-section {
+        width: 100%;
+      }
+      
+      .panel {
+        padding: 16px 20px;
+      }
+    }
+
+    /* Card catalog index tabs effect */
+    .panel::after {
+      content: '';
+      position: absolute;
+      top: -2px;
+      right: 20px;
+      width: 60px;
+      height: 8px;
+      border-radius: 0 0 8px 8px;
+      z-index: 3;
+    }
+
+    .web-content-card::after {
+      background: linear-gradient(135deg, var(--ink-blue), #3a5f7d);
+    }
+
+    .questions-card::after {
+      background: linear-gradient(135deg, var(--ink-purple), #7d5a7d);
+    }
+
+    .library-card::after {
+      background: linear-gradient(135deg, var(--ink-red), #a04545);
+    }
+
+    .input-card::after {
+      background: linear-gradient(135deg, var(--library-green), #5a6b5a);
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <!-- Add Web Content top-left -->
+    <div class="panel web-content-card">
+      <div class="title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="color: #1e3a5f;">
+          <circle cx="12" cy="12" r="9"/>
+          <path d="M2 12h20"/>
+          <path d="M12 2a15.3 15.3 0 0 1 0 20"/>
+          <path d="M12 2a15.3 15.3 0 0 0 0 20"/>
+        </svg>
+        <div class="vintage-text">Add Web Content</div>
+      </div>
+      <div class="inner">
+        <div class="input-bar">
+          <input type="text" class="input-field" placeholder="https://example.com/article" />
+        </div>
+        <div class="input-bar">
+          <input type="text" class="input-field" placeholder="Override the page title..." />
+        </div>
+        <div class="input-bar">
+          <input type="text" class="input-field" placeholder="Tags, keywords..." />
+        </div>
+      </div>
+    </div>
+
+    <!-- Ask Questions top-right -->
+    <div class="panel questions-card">
+      <div class="title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color: #6b4a6b;">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+        </svg>
+        <div class="vintage-text">Ask Questions</div>
+      </div>
+      <div class="robot-area">
+        <svg class="robot-icon" viewBox="0 0 80 80" fill="none">
+          <!-- Robot body -->
+          <rect x="20" y="30" width="40" height="30" rx="6" fill="#b9a67d" stroke="#4a5d4a" stroke-width="3"/>
+          <!-- Robot head -->
+          <rect x="25" y="15" width="30" height="20" rx="4" fill="#c9b896" stroke="#4a5d4a" stroke-width="2"/>
+          <!-- Eyes -->
+          <circle cx="32" cy="25" r="3" fill="#1e3a5f"/>
+          <circle cx="48" cy="25" r="3" fill="#1e3a5f"/>
+          <!-- Antenna -->
+          <line x1="40" y1="15" x2="40" y2="8" stroke="#8b3a3a" stroke-width="3" stroke-linecap="round"/>
+          <circle cx="40" cy="5" r="3" fill="#d4834a" stroke="#8b3a3a" stroke-width="2"/>
+          <!-- Chest panel -->
+          <rect x="30" y="40" width="20" height="15" rx="2" fill="#e8dcc0" stroke="#4a5d4a" stroke-width="1"/>
+          <!-- Control buttons -->
+          <circle cx="35" cy="47" r="2" fill="#8b3a3a"/>
+          <circle cx="45" cy="47" r="2" fill="#4a6b4a"/>
+        </svg>
+      </div>
+    </div>
+
+    <!-- Document Library bottom-left -->
+    <div class="panel library-card">
+      <div class="title">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="color: #8b3a3a;">
+          <path d="M4 4h16v16H4z"/>
+          <path d="M8 8h8"/>
+          <path d="M8 12h8"/>
+          <path d="M8 16h4"/>
+        </svg>
+        <div class="vintage-text">Document Library</div>
+      </div>
+      <div class="upload" onclick="document.getElementById('fileInput').click()">
+        <div class="upload-content">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="color: #7d5a3a;">
+            <path d="M4 17h16"/>
+            <path d="M12 3v14"/>
+            <path d="M8 11l4-4 4 4"/>
+          </svg>
+          <div>Drag & drop PDF files here, or click to select</div>
+        </div>
+        <div class="upload-subtitle">Supports multiple files • Max 50MB per file</div>
+      </div>
+      <input type="file" id="fileInput" style="display: none;" multiple accept=".pdf" />
+    </div>
+
+    <!-- Input area bottom-right -->
+    <div class="panel input-card">
+      <div class="input-panel">
+        <div class="input-section">
+          <div class="input-bar">
+            <textarea class="input-field" placeholder="Ask a question about your documents..." rows="2"></textarea>
+          </div>
+        </div>
+        <div class="mic-box" onclick="toggleMicrophone()">
+          <svg class="microphone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" style="color: #4a5d4a;">
+            <path d="M12 1a4 4 0 0 1 4 4v7a4 4 0 1 1-8 0V5a4 4 0 0 1 4-4z"/>
+            <path d="M5 10a7 7 0 0 0 14 0"/>
+            <line x1="12" y1="17" x2="12" y2="21"/>
+            <line x1="8" y1="21" x2="16" y2="21"/>
+          </svg>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // File upload functionality
+    document.getElementById('fileInput').addEventListener('change', function(e) {
+      const files = e.target.files;
+      if (files.length > 0) {
+        const uploadArea = document.querySelector('.upload-content div:last-child');
+        const originalText = uploadArea.textContent;
+        uploadArea.textContent = `${files.length} file(s) selected`;
+        
+        // Reset text after 3 seconds
+        setTimeout(() => {
+          uploadArea.textContent = originalText;
+        }, 3000);
+      }
+    });
+
+    // Drag and drop functionality
+    const uploadArea = document.querySelector('.upload');
+    
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+      uploadArea.addEventListener(eventName, preventDefaults, false);
+    });
+
+    function preventDefaults(e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
+    ['dragenter', 'dragover'].forEach(eventName => {
+      uploadArea.addEventListener(eventName, highlight, false);
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+      uploadArea.addEventListener(eventName, unhighlight, false);
+    });
+
+    function highlight(e) {
+      uploadArea.style.background = 'linear-gradient(135deg, rgba(234, 199, 163, 0.9) 0%, rgba(230, 192, 154, 1) 100%)';
+      uploadArea.style.borderColor = '#d49a5a';
+      uploadArea.style.transform = 'scale(1.02)';
+    }
+
+    function unhighlight(e) {
+      uploadArea.style.background = 'linear-gradient(135deg, rgba(234, 199, 163, 0.6) 0%, rgba(230, 192, 154, 0.7) 100%)';
+      uploadArea.style.borderColor = '#8b3a3a';
+      uploadArea.style.transform = 'scale(1)';
+    }
+
+    uploadArea.addEventListener('drop', handleDrop, false);
+
+    function handleDrop(e) {
+      const files = e.dataTransfer.files;
+      if (files.length > 0) {
+        const uploadText = document.querySelector('.upload-content div:last-child');
+        const originalText = uploadText.textContent;
+        uploadText.textContent = `${files.length} file(s) dropped`;
+        
+        setTimeout(() => {
+          uploadText.textContent = originalText;
+        }, 3000);
+      }
+    }
+
+    // Microphone toggle functionality
+    function toggleMicrophone() {
+      const micBox = document.querySelector('.mic-box');
+      const isActive = micBox.classList.contains('active');
+      
+      if (isActive) {
+        micBox.classList.remove('active');
+        micBox.style.background = 'linear-gradient(135deg, #f7edd3 0%, #f2e8c4 100%)';
+        micBox.style.borderColor = '#5a6d5a';
+      } else {
+        micBox.classList.add('active');
+        micBox.style.background = 'linear-gradient(135deg, #f9efd5 0%, #f4eac6 100%)';
+        micBox.style.borderColor = '#8d6a4a';
+      }
+      
+      // Auto-deactivate after 3 seconds if active
+      if (!isActive) {
+        setTimeout(() => {
+          micBox.classList.remove('active');
+          micBox.style.background = 'linear-gradient(135deg, #f7edd3 0%, #f2e8c4 100%)';
+          micBox.style.borderColor = '#5a6d5a';
+        }, 3000);
+      }
+    }
+
+    // Auto-resize textarea
+    document.querySelector('textarea').addEventListener('input', function() {
+      this.style.height = 'auto';
+      this.style.height = this.scrollHeight + 'px';
+    });
+
+    // Add vintage typewriter sound effect simulation (visual feedback)
+    document.querySelectorAll('input, textarea').forEach(input => {
+      input.addEventListener('keydown', function() {
+        this.style.transform = 'scale(0.998)';
+        setTimeout(() => {
+          this.style.transform = 'scale(1)';
+        }, 50);
+      });
+    });
+  </script>
+</body>
+</html>
