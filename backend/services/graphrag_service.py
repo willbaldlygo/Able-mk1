@@ -9,32 +9,26 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 import networkx as nx
 
-# GraphRAG full package not available in Python 3.13, using lightweight alternative
-GRAPHRAG_AVAILABLE = True  # Enable lightweight GraphRAG alternative
-
-# Uncomment the following when GraphRAG is properly installed:
-# try:
-#     from graphrag.config import GraphRagConfig
-#     from graphrag.index import run_pipeline_with_config
-#     from graphrag.query.context_builder.entity_extraction import EntityVectorStoreKey
-#     from graphrag.query.indexer_adapters import (
-#         read_indexer_entities,
-#         read_indexer_relationships,
-#         read_indexer_reports,
-#         read_indexer_text_units,
-#     )
-#     from graphrag.query.llm.oai.chat_openai import ChatOpenAI
-#     from graphrag.query.llm.oai.typing import OpenaiApiType
-#     from graphrag.query.structured_search.global_search.community_context import GlobalCommunityContext
-#     from graphrag.query.structured_search.global_search.search import GlobalSearch
-#     from graphrag.query.structured_search.local_search.mixed_context import LocalSearchMixedContext
-#     from graphrag.query.structured_search.local_search.search import LocalSearch
-#     from graphrag.vector_stores.lancedb import LanceDBVectorStore
-# except ImportError as e:
-#     logging.warning(f"GraphRAG import failed: {e}. GraphRAG features will be disabled.")
-#     GRAPHRAG_AVAILABLE = False
-# else:
-#     GRAPHRAG_AVAILABLE = True
+# GraphRAG now properly installed with Python 3.11
+try:
+    from graphrag.config.load_config import load_config
+    from graphrag.config.models.graph_rag_config import GraphRagConfig
+    from graphrag.index.run import run_pipeline
+    from graphrag.query.indexer_adapters import (
+        read_indexer_entities,
+        read_indexer_relationships,
+        read_indexer_reports,
+        read_indexer_text_units,
+    )
+    from graphrag.query.structured_search.global_search.community_context import GlobalCommunityContext
+    from graphrag.query.structured_search.global_search.search import GlobalSearch
+    from graphrag.query.structured_search.local_search.mixed_context import LocalSearchMixedContext
+    from graphrag.query.structured_search.local_search.search import LocalSearch
+    from graphrag.vector_stores.lancedb import LanceDBVectorStore
+    GRAPHRAG_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"GraphRAG import failed: {e}. GraphRAG features will be disabled.")
+    GRAPHRAG_AVAILABLE = False
 
 from config import config
 
@@ -75,8 +69,8 @@ class GraphRAGService:
     def _init_graphrag(self):
         """Initialize GraphRAG configuration and search components."""
         try:
-            # Create GraphRAG configuration
-            self.config = self._create_graphrag_config()
+            # Load GraphRAG configuration
+            self.config = self._load_graphrag_config()
             
             # Load existing data if available
             self._load_graph_data()
@@ -89,77 +83,16 @@ class GraphRAGService:
             global GRAPHRAG_AVAILABLE
             GRAPHRAG_AVAILABLE = False
     
-    def _create_graphrag_config(self) -> Any:
-        """Create GraphRAG configuration for Able."""
-        config_dict = {
-            "llm": {
-                "api_key": config.anthropic_api_key,
-                "type": "azure_openai_chat",  # Will be adapted for Anthropic
-                "model": "claude-3-sonnet-20240229",
-                "max_tokens": 4000,
-                "temperature": 0.0
-            },
-            "parallelization": {
-                "stagger": 0.3,
-                "num_threads": 4,
-            },
-            "async_mode": "threaded",
-            "root_dir": str(self.graphrag_dir),
-            "input": {
-                "type": "file",
-                "file_type": "text",
-                "base_dir": str(self.graphrag_dir / "input"),
-                "file_encoding": "utf-8",
-            },
-            "cache": {
-                "type": "file",
-                "base_dir": str(self.graphrag_dir / "cache"),
-            },
-            "storage": {
-                "type": "file",
-                "base_dir": str(self.graphrag_dir / "output"),
-            },
-            "reporting": {
-                "type": "file",
-                "base_dir": str(self.graphrag_dir / "logs"),
-            },
-            "entity_extraction": {
-                "prompt": "prompts/entity_extraction.txt",
-                "entity_types": ["PERSON", "ORGANIZATION", "LOCATION", "EVENT", "CONCEPT", "TECHNOLOGY", "METHOD"],
-                "max_gleanings": 1,
-            },
-            "summarize_descriptions": {
-                "prompt": "prompts/summarize_descriptions.txt",
-                "max_length": 500,
-            },
-            "claim_extraction": {
-                "enabled": True,
-                "prompt": "prompts/claim_extraction.txt",
-                "description": "Any claims or facts that could be relevant to information discovery",
-                "max_gleanings": 1,
-            },
-            "community_reports": {
-                "prompt": "prompts/community_report.txt",
-                "max_length": 1500,
-                "max_input_length": 8000,
-            },
-            "chunks": {
-                "size": 1200,
-                "overlap": 100,
-                "group_by_columns": ["source"],
-            },
-            "embed_graph": {
-                "enabled": True,
-                "num_walks": 10,
-                "walk_length": 40,
-                "window_size": 2,
-                "iterations": 3,
-                "random_seed": 597832,
-            },
-        }
-        
-        # return GraphRagConfig.from_dict(config_dict)  # GraphRAG disabled
-        return config_dict
+    def _load_graphrag_config(self) -> Any:
+        """Load GraphRAG configuration from settings.yaml."""
+        try:
+            # Load configuration from the GraphRAG directory
+            config = load_config(root_dir=self.graphrag_dir)
+            logger.info("GraphRAG configuration loaded successfully")
+            return config
+        except Exception as e:
+            logger.error(f"Failed to load GraphRAG config: {e}")
+            return None
     
     def _load_graph_data(self):
         """Load existing GraphRAG data."""
@@ -495,31 +428,38 @@ class GraphRAGService:
         ai_service = AIService()
         
         entity_prompt = f"""
-        Analyze the following document content and extract key entities. 
-        Focus on: PERSON, ORGANIZATION, LOCATION, EVENT, CONCEPT, TECHNOLOGY, METHOD
-        
-        Document: {document_name}
-        Content: {content[:3000]}...
-        
-        Return a JSON list of entities with this format:
-        [
-            {{
-                "name": "entity name",
-                "type": "PERSON|ORGANIZATION|LOCATION|EVENT|CONCEPT|TECHNOLOGY|METHOD",
-                "description": "brief description",
-                "source_document_id": "{document_id}",
-                "source_document_name": "{document_name}"
-            }}
-        ]
-        
-        Only return valid JSON, no other text.
-        """
+You are a JSON entity extractor. Extract entities from the document content below.
+
+Document: {document_name}
+Content: {content[:2000]}...
+
+Extract entities of these types: PERSON, ORGANIZATION, LOCATION, EVENT, CONCEPT, TECHNOLOGY, METHOD
+
+Return ONLY a valid JSON array with no additional text, explanations, or formatting:
+
+[{{"name":"entity_name","type":"ENTITY_TYPE","description":"brief_description","source_document_id":"{document_id}","source_document_name":"{document_name}"}}]
+
+JSON:
+"""
         
         try:
-            response = await ai_service.generate_response(entity_prompt, [])
+            # Use the synchronous method since generate_response is not async
+            response = ai_service.generate_response_with_provider(entity_prompt, [], disable_formatting=True)
             # Parse JSON response
             import json
-            entities = json.loads(response)
+            import re
+            
+            # Extract JSON from response if it contains other text
+            answer = response.answer.strip()
+            
+            # Try to find JSON array in the response
+            json_match = re.search(r'\[.*\]', answer, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(0)
+            else:
+                json_str = answer
+            
+            entities = json.loads(json_str)
             
             # Add IDs and ensure proper format
             for entity in entities:
@@ -542,30 +482,35 @@ class GraphRAGService:
         entity_names = [e["name"] for e in entities]
         
         relationship_prompt = f"""
-        Analyze relationships between these entities in the document content:
-        Entities: {entity_names}
-        
-        Content: {content[:3000]}...
-        
-        Return a JSON list of relationships with this format:
-        [
-            {{
-                "source_entity": "entity1 name",
-                "target_entity": "entity2 name", 
-                "relationship_type": "type of relationship",
-                "description": "brief description of the relationship",
-                "weight": 1.0,
-                "source_document_id": "{document_id}"
-            }}
-        ]
-        
-        Only return valid JSON, no other text.
-        """
+You are a JSON relationship extractor. Find relationships between these entities:
+
+Entities: {entity_names}
+Content: {content[:2000]}...
+
+Return ONLY a valid JSON array with no additional text:
+
+[{{"source_entity":"entity1","target_entity":"entity2","relationship_type":"relationship","description":"brief_description","weight":1.0,"source_document_id":"{document_id}"}}]
+
+JSON:
+"""
         
         try:
-            response = await ai_service.generate_response(relationship_prompt, [])
+            # Use the synchronous method since generate_response is not async
+            response = ai_service.generate_response_with_provider(relationship_prompt, [], disable_formatting=True)
             import json
-            relationships = json.loads(response)
+            import re
+            
+            # Extract JSON from response if it contains other text
+            answer = response.answer.strip()
+            
+            # Try to find JSON array in the response
+            json_match = re.search(r'\[.*\]', answer, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(0)
+            else:
+                json_str = answer
+            
+            relationships = json.loads(json_str)
             
             # Add IDs and ensure proper format
             for rel in relationships:
@@ -689,7 +634,9 @@ class GraphRAGService:
             Provide a comprehensive answer based on the knowledge graph information.
             """
             
-            answer = await ai_service.generate_response(context_prompt, [])
+            # Use the synchronous method since generate_response is not async
+            response = ai_service.generate_response_with_sources(context_prompt, [])
+            answer = response.answer
             
             return {
                 "success": True,
@@ -746,7 +693,9 @@ class GraphRAGService:
             Focus on providing specific, detailed information about these entities and their connections.
             """
             
-            answer = await ai_service.generate_response(context_prompt, [])
+            # Use the synchronous method since generate_response is not async
+            response = ai_service.generate_response_with_sources(context_prompt, [])
+            answer = response.answer
             
             return {
                 "success": True,

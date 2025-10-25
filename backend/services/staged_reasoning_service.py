@@ -65,7 +65,7 @@ class StagedReasoningService:
         }}
         """
         
-        outline_response = self.ai_service.generate_response_with_sources(outline_prompt, [])
+        outline_response = self.ai_service.generate_response_with_provider(outline_prompt, [])
         
         try:
             outline_data = json.loads(outline_response.answer)
@@ -159,7 +159,7 @@ class StagedReasoningService:
         Provide a detailed, well-structured response that synthesizes information from the sources.
         """
         
-        final_response = self.ai_service.generate_response_with_sources(synthesis_prompt, sources)
+        final_response = self.ai_service.generate_response_with_provider(synthesis_prompt, sources)
         
         return ReasoningStage(
             stage="synthesis",

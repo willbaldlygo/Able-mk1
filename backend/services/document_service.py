@@ -1,4 +1,4 @@
-"""Document processing service for Able with GraphRAG integration."""
+"""Document processing service for Able with GraphRAG and multimodal integration."""
 import asyncio
 import uuid
 import fitz  # PyMuPDF
@@ -10,6 +10,8 @@ from typing import List, Dict, Any, Optional, Tuple
 from config import config
 from models import Document, DocumentChunk
 from services.graphrag_service import GraphRAGService
+from services.image_extractor import ImageExtractor
+from services.multimodal_service import MultimodalService
 
 logger = logging.getLogger(__name__)
 
@@ -40,26 +42,39 @@ def make_child_parent_chunks(text: str, child_size: int = 700, child_overlap: in
     return out
 
 class DocumentService:
-    """Document processing with GraphRAG integration for advanced knowledge synthesis."""
-    
+    """Document processing with GraphRAG and multimodal integration for advanced knowledge synthesis."""
+
     def __init__(self):
         self.graphrag_service = GraphRAGService()
+        self.image_extractor = ImageExtractor()
+        self.multimodal_service = MultimodalService()
     
-    def process_pdf(self, file_path: Path, original_filename: str) -> Document:
-        """Process PDF into document with chunks."""
+    def process_pdf(self, file_path: Path, original_filename: str, enable_multimodal: bool = True) -> Document:
+        """Process PDF into document with chunks and optional multimodal processing."""
         doc_id = str(uuid.uuid4())
-        
+
         # Extract text
         text_content = self._extract_text(file_path)
         if not text_content.strip():
             raise ValueError("PDF contains no extractable text")
-        
+
         # Create chunks
         chunks = self._create_chunks(text_content, doc_id)
-        
+
+        # Extract images if multimodal is enabled
+        if enable_multimodal:
+            try:
+                image_results = self.image_extractor.extract_all_images(str(file_path), doc_id)
+                if image_results["summary"]["success"]:
+                    # Add image information to chunk metadata
+                    self._enhance_chunks_with_image_context(chunks, image_results)
+                    logger.info(f"Extracted {image_results['summary']['total_images']} images from {original_filename}")
+            except Exception as e:
+                logger.warning(f"Image extraction failed for {original_filename}: {e}")
+
         # Generate summary
         summary = self._generate_summary(chunks[:3])
-        
+
         return Document(
             id=doc_id,
             name=original_filename,
@@ -232,8 +247,17 @@ class DocumentService:
     async def process_document_with_graph(self, document: Document) -> Dict[str, Any]:
         """Process document for GraphRAG knowledge graph extraction."""
         try:
-            # Combine all chunks into full text content
-            full_content = "\n\n".join([chunk.content for chunk in document.chunks])
+            # Handle both Document and DocumentMetadata objects
+            if hasattr(document, 'chunks') and document.chunks:
+                # Full Document object with chunks
+                full_content = "\n\n".join([chunk.content for chunk in document.chunks])
+            else:
+                # DocumentMetadata object - need to extract text from file
+                file_path = Path(document.file_path)
+                if file_path.exists() and file_path.suffix.lower() == '.pdf':
+                    full_content = self._extract_text(file_path)
+                else:
+                    raise ValueError(f"Cannot process document: file not found or not PDF: {file_path}")
             
             # Process with GraphRAG
             graph_result = await self.graphrag_service.process_document_for_graph(
@@ -274,3 +298,221 @@ class DocumentService:
     def is_graphrag_available(self) -> bool:
         """Check if GraphRAG is available."""
         return self.graphrag_service.is_available()
+
+    def _enhance_chunks_with_image_context(self, chunks: List[DocumentChunk], image_results: Dict[str, Any]) -> None:
+        """Enhance document chunks with image context information."""
+        try:
+            images = image_results.get("images", [])
+            if not images:
+                return
+
+            # Group images by page number for page-based association
+            page_images = {}
+            for image in images:
+                page_num = image.get("page_number", 1)
+                if page_num not in page_images:
+                    page_images[page_num] = []
+                page_images[page_num].append(image)
+
+            # Add image references to chunks
+            # Simple approach: distribute images across chunks based on page distribution
+            total_chunks = len(chunks)
+            if total_chunks > 0:
+                for chunk_idx, chunk in enumerate(chunks):
+                    # Estimate which page this chunk belongs to
+                    estimated_page = max(1, (chunk_idx * len(page_images)) // total_chunks + 1)
+
+                    # Find images for this estimated page or nearby pages
+                    chunk_images = []
+                    for page_num in range(max(1, estimated_page - 1), min(len(page_images) + 1, estimated_page + 2)):
+                        if page_num in page_images:
+                            chunk_images.extend(page_images[page_num])
+
+                    if chunk_images:
+                        # Add image metadata to chunk
+                        if not hasattr(chunk, 'metadata') or chunk.metadata is None:
+                            chunk.metadata = {}
+
+                        chunk.metadata["images"] = [
+                            {
+                                "image_id": img["image_id"],
+                                "file_path": img["file_path"],
+                                "image_type": img["image_type"],
+                                "page_number": img.get("page_number"),
+                                "width": img.get("width"),
+                                "height": img.get("height")
+                            }
+                            for img in chunk_images[:2]  # Limit to 2 images per chunk
+                        ]
+
+        except Exception as e:
+            logger.error(f"Error enhancing chunks with image context: {e}")
+
+    async def process_pdf_with_multimodal_analysis(self, file_path: Path, original_filename: str) -> Tuple[Document, Dict[str, Any]]:
+        """
+        Process PDF with chunked multimodal analysis.
+        """
+        doc_id = str(uuid.uuid4())
+
+        # Extract text
+        text_content = self._extract_text(file_path)
+        if not text_content.strip():
+            raise ValueError("PDF contains no extractable text")
+
+        # Create chunks
+        chunks = self._create_chunks(text_content, doc_id)
+
+        # Chunked image processing
+        multimodal_results = await self._process_images_chunked(file_path, doc_id, original_filename)
+
+        # Add visual context to chunks if available
+        if multimodal_results.get("images"):
+            visual_context = self.multimodal_service.create_visual_context_summary(multimodal_results["images"])
+            if visual_context:
+                for chunk in chunks[:3]:
+                    if not hasattr(chunk, 'metadata') or chunk.metadata is None:
+                        chunk.metadata = {}
+                    chunk.metadata["visual_context"] = visual_context
+
+        # Generate summary
+        summary = self._generate_summary(chunks[:3])
+
+        document = Document(
+            id=doc_id,
+            name=original_filename,
+            file_path=str(file_path),
+            summary=summary,
+            chunks=chunks,
+            created_at=datetime.now(),
+            file_size=file_path.stat().st_size,
+            source_type="pdf"
+        )
+
+        return document, multimodal_results
+
+    async def _process_images_chunked(self, file_path: Path, doc_id: str, filename: str) -> Dict[str, Any]:
+        """Process images in chunks to prevent memory issues."""
+        multimodal_results = {"images": [], "summary": {}}
+        
+        try:
+            # Extract images in batches of 5 pages
+            page_batch_size = 5
+            pdf_doc = fitz.open(file_path)
+            total_pages = len(pdf_doc)
+            pdf_doc.close()
+            
+            all_images = []
+            processed_count = 0
+            failed_count = 0
+            
+            for start_page in range(0, total_pages, page_batch_size):
+                end_page = min(start_page + page_batch_size, total_pages)
+                logger.info(f"Processing pages {start_page+1}-{end_page} of {filename}")
+                
+                # Extract images for this batch
+                batch_images = self.image_extractor.extract_images_from_pdf_pages_range(
+                    str(file_path), doc_id, start_page, end_page
+                )
+                
+                if batch_images:
+                    # Process with LLava in smaller batches
+                    image_paths = [img["file_path"] for img in batch_images]
+                    batch_analysis = await self.multimodal_service.process_images_batch(
+                        image_paths[:3], doc_id  # Limit to 3 images per batch
+                    )
+                    
+                    all_images.extend(batch_analysis)
+                    processed_count += len([img for img in batch_analysis if img.get("visual_description")])
+                    failed_count += len([img for img in batch_analysis if not img.get("visual_description")])
+                
+                # Small delay to prevent overwhelming the system
+                await asyncio.sleep(0.1)
+            
+            multimodal_results["images"] = all_images
+            multimodal_results["summary"] = {
+                "total_images": len(all_images),
+                "completed_analysis": processed_count,
+                "failed": failed_count,
+                "success": len(all_images) > 0
+            }
+            
+            logger.info(f"Chunked processing complete for {filename}: {processed_count} images analyzed")
+            
+        except Exception as e:
+            logger.error(f"Chunked image processing failed for {filename}: {e}")
+            multimodal_results["error"] = str(e)
+        
+        return multimodal_results
+
+    async def process_image_file(self, image_data: bytes, filename: str) -> Tuple[str, Dict[str, Any]]:
+        """
+        Process uploaded image file.
+
+        Args:
+            image_data: Raw image file data
+            filename: Original filename
+
+        Returns:
+            Tuple of (document_id, processing_results)
+        """
+        doc_id = str(uuid.uuid4())
+
+        try:
+            # Extract and save image
+            image_info = self.image_extractor.extract_images_from_direct_upload(image_data, filename, doc_id)
+
+            # Analyze image with multimodal service
+            analysis_result = await self.multimodal_service.process_image(
+                image_info["file_path"],
+                doc_id,
+                chunk_index=0
+            )
+
+            return doc_id, {
+                "image_info": image_info,
+                "analysis": analysis_result,
+                "success": True
+            }
+
+        except Exception as e:
+            logger.error(f"Error processing image file {filename}: {e}")
+            return doc_id, {
+                "error": str(e),
+                "success": False
+            }
+
+    def get_document_images(self, document_id: str) -> List[Dict[str, Any]]:
+        """
+        Get all images associated with a document.
+
+        Args:
+            document_id: Document ID
+
+        Returns:
+            List of image information dictionaries
+        """
+        # This would typically query a database in a production system
+        # For now, we'll scan the images directory
+        images = []
+        try:
+            pattern = f"{document_id}_*"
+            for image_file in self.image_extractor.images_dir.glob(pattern):
+                image_info = self.image_extractor.get_image_info(str(image_file))
+                if image_info:
+                    images.append(image_info)
+        except Exception as e:
+            logger.error(f"Error getting images for document {document_id}: {e}")
+
+        return images
+
+    def cleanup_document_images(self, document_id: str) -> int:
+        """
+        Clean up images associated with a document.
+
+        Args:
+            document_id: Document ID
+
+        Returns:
+            Number of images deleted
+        """
+        return self.image_extractor.cleanup_document_images(document_id)

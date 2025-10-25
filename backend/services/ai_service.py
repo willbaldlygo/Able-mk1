@@ -1,14 +1,16 @@
-"""AI service for Able with GraphRAG integration and dual provider support."""
+"""AI service for Able with GraphRAG integration, dual provider support, and multimodal capabilities."""
 import anthropic
 import asyncio
+import base64
+import requests
 from datetime import datetime
 from typing import List, Optional, Union, AsyncGenerator, Dict
 from enum import Enum
 
 from config import config
 from models import (
-    SourceInfo, 
-    ChatResponse, 
+    SourceInfo,
+    ChatResponse,
     ChatRequest,
     EnhancedSourceInfo,
     EnhancedChatResponse,
@@ -16,6 +18,7 @@ from models import (
     RelationshipInfo
 )
 from services.model_service import model_service
+from .response_formatter import ResponseFormatter
 
 
 class AIProvider(Enum):
@@ -38,6 +41,9 @@ class AIService:
         # Provider settings
         self.default_provider = AIProvider(config.default_provider)
         self.fallback_enabled = config.fallback_enabled
+        
+        # Response formatter
+        self.formatter = ResponseFormatter()
     
     def get_available_providers(self) -> List[str]:
         """Get list of available AI providers."""
@@ -84,7 +90,8 @@ class AIService:
         question: str, 
         sources: List[SourceInfo], 
         provider: Optional[str] = None,
-        model: Optional[str] = None
+        model: Optional[str] = None,
+        disable_formatting: bool = False
     ) -> ChatResponse:
         """Generate response using specified provider with fallback."""
         target_provider = AIProvider(provider) if provider else self.default_provider
@@ -92,9 +99,9 @@ class AIService:
         # Try primary provider
         try:
             if target_provider == AIProvider.ANTHROPIC:
-                return self._generate_anthropic_response(question, sources, model)
+                return self._generate_anthropic_response(question, sources, model, disable_formatting)
             elif target_provider == AIProvider.OLLAMA:
-                return self._generate_ollama_response(question, sources, model)
+                return self._generate_ollama_response(question, sources, model, disable_formatting)
         except Exception as e:
             print(f"Primary provider ({target_provider.value}) failed: {e}")
             
@@ -109,9 +116,9 @@ class AIService:
                     try:
                         print(f"Attempting fallback to {fallback_provider.value}")
                         if fallback_provider == AIProvider.ANTHROPIC:
-                            return self._generate_anthropic_response(question, sources, model)
+                            return self._generate_anthropic_response(question, sources, model, disable_formatting)
                         elif fallback_provider == AIProvider.OLLAMA:
-                            return self._generate_ollama_response(question, sources, model)
+                            return self._generate_ollama_response(question, sources, model, disable_formatting)
                     except Exception as fallback_error:
                         print(f"Fallback provider failed: {fallback_error}")
             
@@ -130,7 +137,8 @@ class AIService:
         self, 
         question: str, 
         sources: List[SourceInfo], 
-        model: Optional[str] = None
+        model: Optional[str] = None,
+        disable_formatting: bool = False
     ) -> ChatResponse:
         """Generate response using Anthropic Claude."""
         # Prepare context
@@ -153,10 +161,16 @@ class AIService:
             }]
         )
         
-        answer = response.content[0].text
+        # Detect formatting requirements and format response
+        raw_answer = response.content[0].text
+        if disable_formatting:
+            formatted_answer = raw_answer
+        else:
+            format_requirements = self.formatter.detect_format_requirements(question)
+            formatted_answer = self.formatter.format_response(raw_answer, format_requirements)
         
         return ChatResponse(
-            answer=answer,
+            answer=formatted_answer,
             sources=sources,
             timestamp=datetime.now()
         )
@@ -165,7 +179,8 @@ class AIService:
         self, 
         question: str, 
         sources: List[SourceInfo], 
-        model: Optional[str] = None
+        model: Optional[str] = None,
+        disable_formatting: bool = False
     ) -> ChatResponse:
         """Generate response using Ollama."""
         # Prepare context
@@ -183,8 +198,16 @@ class AIService:
         if not response['success']:
             raise Exception(response.get('error', 'Ollama generation failed'))
         
+        # Detect formatting requirements and format response
+        raw_answer = response['response']
+        if disable_formatting:
+            formatted_answer = raw_answer
+        else:
+            format_requirements = self.formatter.detect_format_requirements(question)
+            formatted_answer = self.formatter.format_response(raw_answer, format_requirements)
+        
         return ChatResponse(
-            answer=response['response'],
+            answer=formatted_answer,
             sources=sources,
             timestamp=datetime.now()
         )
@@ -468,14 +491,18 @@ Please provide a helpful and accurate response based on the document excerpts pr
             prompt = self._create_graphrag_prompt(question, context, search_type)
             
             if target_provider == AIProvider.ANTHROPIC:
-                answer = self._generate_anthropic_enhanced_response(prompt, model)
+                raw_answer = self._generate_anthropic_enhanced_response(prompt, model)
             elif target_provider == AIProvider.OLLAMA:
-                answer = self._generate_ollama_enhanced_response(prompt, model)
+                raw_answer = self._generate_ollama_enhanced_response(prompt, model)
             else:
                 raise ValueError(f"Unsupported provider: {target_provider}")
             
+            # Apply formatting to enhanced responses
+            format_requirements = self.formatter.detect_format_requirements(question)
+            formatted_answer = self.formatter.format_response(raw_answer, format_requirements)
+            
             return EnhancedChatResponse(
-                answer=answer,
+                answer=formatted_answer,
                 sources=sources,
                 timestamp=datetime.now(),
                 search_type=search_type
@@ -623,3 +650,243 @@ ENHANCED DOCUMENT CONTEXT WITH ENTITIES:
 USER QUESTION: {question}
 
 Please provide a comprehensive answer that leverages both the document content and the entity relationship information provided."""
+
+    # Multimodal/Vision capabilities
+
+    def _encode_image_to_base64(self, image_path: str) -> Optional[str]:
+        """Encode image file to base64 for llava processing."""
+        try:
+            with open(image_path, "rb") as image_file:
+                image_data = image_file.read()
+                return base64.b64encode(image_data).decode('utf-8')
+        except Exception as e:
+            print(f"Error encoding image {image_path}: {e}")
+            return None
+
+    def check_llava_availability(self) -> bool:
+        """Check if llava model is available in ollama."""
+        try:
+            response = requests.get(f"{config.ollama_host}/api/tags", timeout=5)
+            if response.status_code == 200:
+                models = response.json().get("models", [])
+                for model in models:
+                    if "llava" in model.get("name", "").lower():
+                        return True
+            return False
+        except Exception as e:
+            print(f"Could not check llava availability: {e}")
+            return False
+
+    def generate_multimodal_response(
+        self,
+        question: str,
+        sources: List[SourceInfo],
+        image_paths: List[str] = None,
+        visual_context: Optional[str] = None
+    ) -> ChatResponse:
+        """
+        Generate response using multimodal capabilities (text + images).
+
+        Args:
+            question: User's question
+            sources: Document sources
+            image_paths: List of image file paths to analyze
+            visual_context: Pre-generated visual context descriptions
+
+        Returns:
+            ChatResponse with multimodal analysis
+        """
+        # Check if llava is available for image analysis
+        llava_available = self.check_llava_availability()
+
+        # Prepare text context
+        text_context = self._prepare_context(sources)
+
+        # Prepare visual context
+        image_descriptions = []
+        if image_paths and llava_available:
+            for image_path in image_paths[:3]:  # Limit to 3 images to avoid token limits
+                description = self._analyze_image_with_llava(image_path, question)
+                if description:
+                    image_descriptions.append(f"Image Analysis: {description}")
+
+        # Use provided visual context if no new analysis was done
+        if not image_descriptions and visual_context:
+            image_descriptions.append(f"Visual Context: {visual_context}")
+
+        # Create multimodal prompt
+        multimodal_prompt = self._create_multimodal_prompt(
+            question,
+            text_context,
+            image_descriptions
+        )
+
+        # Generate response based on provider
+        try:
+            if self.default_provider == AIProvider.ANTHROPIC:
+                response = self._generate_anthropic_multimodal_response(multimodal_prompt)
+            else:
+                response = self._generate_ollama_multimodal_response(multimodal_prompt)
+
+            return ChatResponse(
+                answer=response,
+                sources=sources,
+                timestamp=datetime.now()
+            )
+
+        except Exception as e:
+            return ChatResponse(
+                answer=f"I encountered an error while processing your multimodal question: {str(e)}",
+                sources=sources,
+                timestamp=datetime.now()
+            )
+
+    def _analyze_image_with_llava(self, image_path: str, context_question: str = None) -> Optional[str]:
+        """Analyze a single image using llava model."""
+        try:
+            image_base64 = self._encode_image_to_base64(image_path)
+            if not image_base64:
+                return None
+
+            # Create context-aware prompt
+            if context_question:
+                prompt = f"""Analyze this image in the context of this question: "{context_question}"
+
+Describe what you see with focus on:
+1. Text content (OCR if any)
+2. Charts, graphs, diagrams, or tables
+3. Visual elements relevant to the question
+4. Key information that would help answer the question
+5. Overall context and setting
+
+Be detailed but concise."""
+            else:
+                prompt = """Describe this image in detail, focusing on:
+1. Main subjects and content
+2. Any text visible (OCR)
+3. Charts, diagrams, tables, or data visualizations
+4. Important visual elements
+5. Context that would be useful for document understanding"""
+
+            payload = {
+                "model": "llava:latest",  # Use available llava model
+                "prompt": prompt,
+                "images": [image_base64],
+                "stream": False,
+                "options": {
+                    "temperature": 0.1,  # Lower temperature for more consistent analysis
+                    "top_k": 10,
+                    "top_p": 0.9
+                }
+            }
+
+            response = requests.post(
+                f"{config.ollama_host}/api/generate",
+                json=payload,
+                timeout=60
+            )
+
+            if response.status_code == 200:
+                result = response.json()
+                return result.get("response", "").strip()
+            else:
+                print(f"llava analysis failed: {response.status_code} - {response.text}")
+                return None
+
+        except Exception as e:
+            print(f"Error analyzing image with llava: {e}")
+            return None
+
+    def _create_multimodal_prompt(
+        self,
+        question: str,
+        text_context: str,
+        image_descriptions: List[str]
+    ) -> str:
+        """Create prompt that combines text and visual information."""
+        visual_section = ""
+        if image_descriptions:
+            visual_section = f"""
+
+VISUAL INFORMATION:
+{chr(10).join(image_descriptions)}
+"""
+
+        return f"""You are Able, an advanced multimodal research assistant that can analyze both text documents and visual content (images, charts, diagrams, etc.).
+
+INSTRUCTIONS:
+1. Use both the text content and visual information to answer the question
+2. When referencing visual elements, be specific about what you observed
+3. Integrate visual insights with textual information for a comprehensive answer
+4. If visual elements contradict or supplement text information, highlight this
+5. Be specific about which sources (text or visual) support your statements
+
+DOCUMENT TEXT CONTEXT:
+{text_context}
+{visual_section}
+
+USER QUESTION: {question}
+
+Please provide a comprehensive answer that integrates both textual and visual information."""
+
+    def _generate_anthropic_multimodal_response(self, prompt: str, model: Optional[str] = None) -> str:
+        """Generate multimodal response using Anthropic Claude."""
+        model_to_use = model or self.claude_model
+
+        response = self.anthropic_client.messages.create(
+            model=model_to_use,
+            max_tokens=config.max_tokens,
+            temperature=config.temperature,
+            messages=[{
+                "role": "user",
+                "content": prompt
+            }]
+        )
+
+        return response.content[0].text
+
+    def _generate_ollama_multimodal_response(self, prompt: str, model: Optional[str] = None) -> str:
+        """Generate multimodal response using Ollama."""
+        model_to_use = model or self.ollama_model
+
+        response = self.model_service.generate_response(model_to_use, prompt, stream=False)
+
+        if not response['success']:
+            raise Exception(response.get('error', 'Ollama generation failed'))
+
+        return response['response']
+
+    def test_multimodal_capabilities(self) -> Dict[str, Union[bool, str]]:
+        """Test multimodal capabilities including llava availability."""
+        result = {
+            "llava_available": False,
+            "llava_model": None,
+            "test_successful": False,
+            "error": None
+        }
+
+        try:
+            # Check if llava is available
+            result["llava_available"] = self.check_llava_availability()
+
+            if result["llava_available"]:
+                # Try to identify the specific llava model
+                response = requests.get(f"{config.ollama_host}/api/tags", timeout=5)
+                if response.status_code == 200:
+                    models = response.json().get("models", [])
+                    for model in models:
+                        model_name = model.get("name", "")
+                        if "llava" in model_name.lower():
+                            result["llava_model"] = model_name
+                            break
+
+                # Simple test if we found a model
+                if result["llava_model"]:
+                    result["test_successful"] = True
+            else:
+                result["error"] = "No llava model found in ollama"
+
+        except Exception as e:
+            result["error"] = str(e)
+
+        return result

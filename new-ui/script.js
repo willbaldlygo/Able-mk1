@@ -4,7 +4,7 @@ class AbleApp {
         this.documents = [];
         this.chatHistory = [];
         this.isRecording = false;
-        
+
         this.initializeElements();
         this.setupEventListeners();
         this.checkSystemHealth();
@@ -27,7 +27,8 @@ class AbleApp {
         this.modelSelector = document.getElementById('modelSelector');
         this.modelDropdown = document.getElementById('modelDropdown');
         this.shutdownButton = document.getElementById('shutdownButton');
-        
+
+
         // MCP elements
         this.mcpToggle = document.getElementById('mcpToggle');
         this.mcpModal = document.getElementById('mcpModal');
@@ -37,6 +38,12 @@ class AbleApp {
         this.filesystemRoot = document.getElementById('filesystemRoot');
         this.gitRepos = document.getElementById('gitRepos');
         this.sqliteDbs = document.getElementById('sqliteDbs');
+
+        // Visual modal elements
+        this.visualModal = document.getElementById('visualModal');
+        this.visualModalClose = document.getElementById('visualModalClose');
+        this.visualModalClose2 = document.getElementById('visualModalClose2');
+        this.visualModalContent = document.getElementById('visualModalContent');
     }
 
     setupEventListeners() {
@@ -77,7 +84,7 @@ class AbleApp {
         
         // Shutdown button
         this.shutdownButton.addEventListener('click', () => this.shutdownServices());
-        
+
         // MCP events
         this.mcpToggle.addEventListener('click', () => this.toggleMCP());
         this.mcpModalClose.addEventListener('click', () => this.closeMCPModal());
@@ -87,6 +94,13 @@ class AbleApp {
         // Close modal on outside click
         this.mcpModal.addEventListener('click', (e) => {
             if (e.target === this.mcpModal) this.closeMCPModal();
+        });
+
+        // Visual modal events
+        this.visualModalClose.addEventListener('click', () => this.closeVisualModal());
+        this.visualModalClose2.addEventListener('click', () => this.closeVisualModal());
+        this.visualModal.addEventListener('click', (e) => {
+            if (e.target === this.visualModal) this.closeVisualModal();
         });
     }
 
@@ -115,7 +129,7 @@ class AbleApp {
 
     renderLibrary() {
         this.libraryList.innerHTML = '';
-        
+
         if (this.documents.length === 0) {
             this.libraryList.innerHTML = '<div style="text-align: center; color: #666; padding: 20px;">No documents uploaded</div>';
             return;
@@ -126,11 +140,37 @@ class AbleApp {
             item.className = 'library-item';
             const title = doc.name || doc.title || 'Untitled Document';
             const summary = doc.summary ? doc.summary.substring(0, 100) + '...' : 'No summary available';
+
+            // Check for multimodal indicators
+            const isMultimodal = doc.multimodal_info && (doc.multimodal_info.has_images || doc.multimodal_info.images_count > 0);
+            const imageCount = doc.multimodal_info?.images_count || 0;
+            const visualDescriptions = doc.multimodal_info?.visual_descriptions_count || 0;
+
+            // Generate multimodal badges and visual context button
+            let badges = '';
+            let visualButton = '';
+            if (isMultimodal) {
+                badges += '<span class="multimodal-badge">🖼️ Multimodal</span>';
+                if (imageCount > 0) {
+                    badges += `<span class="image-count-badge">${imageCount} images</span>`;
+                    visualButton = `<button class="visual-context-button" onclick="app.showVisualContext('${doc.id}')">View Images</button>`;
+                }
+                if (visualDescriptions > 0) {
+                    badges += `<span class="visual-desc-badge">👁️ ${visualDescriptions} descriptions</span>`;
+                }
+            }
+
             item.innerHTML = `
                 <div style="flex: 1;">
-                    <div style="font-weight: 600; margin-bottom: 4px;">${title}</div>
+                    <div class="doc-title-row">
+                        <span style="font-weight: 600; margin-bottom: 4px;">${title}</span>
+                        ${badges}
+                    </div>
                     <div style="font-size: 11px; color: #888; line-height: 1.3; margin-bottom: 4px;">${summary}</div>
-                    <div style="font-size: 12px; color: #666;">${doc.chunk_count} chunks</div>
+                    <div style="font-size: 12px; color: #666; display: flex; align-items: center; gap: 8px;">
+                        <span>${doc.chunk_count} chunks</span>
+                        ${visualButton}
+                    </div>
                 </div>
                 <button class="delete-btn" onclick="app.deleteDocument('${doc.id}')">×</button>
             `;
@@ -139,31 +179,57 @@ class AbleApp {
     }
 
     async handleFileUpload(files) {
-        const pdfFiles = Array.from(files).filter(file => file.type === 'application/pdf');
-        
-        if (pdfFiles.length === 0) {
-            alert('Please select PDF files only');
+        const validFiles = Array.from(files).filter(file => {
+            const isPdf = file.type === 'application/pdf';
+            const isImage = ['image/png', 'image/jpg', 'image/jpeg'].includes(file.type);
+            return isPdf || isImage;
+        });
+
+        if (validFiles.length === 0) {
+            alert('Please select PDF files or images (PNG, JPG, JPEG) only');
             return;
         }
 
+        // Check file types for appropriate processing message
+        const hasImages = validFiles.some(file => file.type.startsWith('image/'));
+        const hasPdfs = validFiles.some(file => file.type === 'application/pdf');
+
         this.uploadArea.classList.add('loading');
-        this.uploadArea.innerHTML = '<div class="spinner"></div> Uploading...';
+
+        // Show appropriate processing message
+        if (hasImages && hasPdfs) {
+            this.uploadArea.innerHTML = '<div class="spinner"></div> Processing PDFs + Images with visual analysis...';
+        } else if (hasImages) {
+            this.uploadArea.innerHTML = '<div class="spinner"></div> Processing Images with visual analysis...';
+        } else {
+            this.uploadArea.innerHTML = '<div class="spinner"></div> Processing PDFs with visual analysis...';
+        }
 
         try {
             const formData = new FormData();
-            pdfFiles.forEach(file => formData.append('files', file));
+            validFiles.forEach(file => formData.append('files', file));
 
-            const response = await fetch(`${this.baseUrl}/upload`, {
+            // Always use multimodal endpoint for enhanced processing
+            const endpoint = '/upload/multimodal';
+
+            const response = await fetch(`${this.baseUrl}${endpoint}`, {
                 method: 'POST',
                 body: formData
             });
 
             const result = await response.json();
-            
+
             if (response.ok) {
                 await this.loadDocuments();
                 await this.checkSystemHealth();
-                this.addChatMessage('system', `✅ ${result.message}`);
+
+                // Enhanced feedback for multimodal processing
+                if (result.multimodal_info) {
+                    const info = result.multimodal_info;
+                    this.addChatMessage('system', `✅ ${result.message}\n🔍 Processed: ${info.images_processed || 0} images, ${info.visual_descriptions_generated || 0} visual descriptions`);
+                } else {
+                    this.addChatMessage('system', `✅ ${result.message}`);
+                }
             } else {
                 throw new Error(result.message || 'Upload failed');
             }
@@ -171,7 +237,7 @@ class AbleApp {
             this.addChatMessage('system', `❌ Upload failed: ${error.message}`);
         } finally {
             this.uploadArea.classList.remove('loading');
-            this.uploadArea.innerHTML = '<span class="icon">⬆</span><span>Drop files here or click to browse</span>';
+            this.uploadArea.innerHTML = '<span class="icon">⬆</span><span>Drop PDFs and images here or click to browse</span>';
             this.fileInput.value = '';
         }
     }
@@ -209,11 +275,12 @@ class AbleApp {
 
         try {
             // Use staged reasoning for complex questions
-            const useStaged = message.split(' ').length > 10 || 
+            const useStaged = message.split(' ').length > 10 ||
                              /\b(how|why|what|when|where|explain|analyze|compare|discuss)\b/i.test(message);
-            
-            const endpoint = useStaged ? '/chat/staged' : '/chat';
-            
+
+            // Always use enhanced multimodal endpoints
+            const endpoint = useStaged ? '/chat/enhanced' : '/chat/multimodal';
+
             const response = await fetch(`${this.baseUrl}${endpoint}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -221,12 +288,12 @@ class AbleApp {
             });
 
             const result = await response.json();
-            
+
             // Remove thinking indicator
             this.removeThinkingMessage(thinkingMessage);
-            
+
             if (response.ok) {
-                this.addChatMessage('assistant', result.answer, result.sources);
+                this.addChatMessage('assistant', result.answer, result.sources, result.multimodal_info);
             } else {
                 throw new Error(result.detail || result.message || 'Chat failed');
             }
@@ -241,20 +308,54 @@ class AbleApp {
         }
     }
 
-    addChatMessage(type, content, sources = []) {
+    addChatMessage(type, content, sources = [], multimodalInfo = null) {
         const messageDiv = document.createElement('div');
         messageDiv.className = `message ${type}`;
-        
-        let html = `<div>${content}</div>`;
-        
+
+        // Render markdown content if it's from assistant, plain text for user
+        let contentHtml;
+        if (type === 'assistant' && typeof marked !== 'undefined') {
+            // Configure marked for safe HTML rendering
+            marked.setOptions({
+                breaks: true,
+                gfm: true
+            });
+            contentHtml = marked.parse(content);
+        } else {
+            contentHtml = content;
+        }
+
+        let html = `<div>${contentHtml}</div>`;
+
+        // Add multimodal processing indicator if available
+        if (multimodalInfo && type === 'assistant') {
+            html += '<div class="multimodal-info">';
+            if (multimodalInfo.visual_elements_used > 0) {
+                html += `<span class="visual-indicator">👁️ Used ${multimodalInfo.visual_elements_used} visual elements</span>`;
+            }
+            if (multimodalInfo.processing_type) {
+                html += `<span class="processing-type">🤖 ${multimodalInfo.processing_type}</span>`;
+            }
+            html += '</div>';
+        }
+
         if (sources && sources.length > 0) {
             html += '<div class="message-sources">';
             sources.forEach(source => {
-                html += `<div class="source-item">📄 ${source.document_name} (${Math.round(source.relevance_score * 100)}%)</div>`;
+                let sourceIcon = '📄';
+                let extraInfo = '';
+
+                // Show visual indicators for sources with images
+                if (source.has_visual_content) {
+                    sourceIcon = '🖼️';
+                    extraInfo = ' 👁️';
+                }
+
+                html += `<div class="source-item">${sourceIcon} ${source.document_name} (${Math.round(source.relevance_score * 100)}%)${extraInfo}</div>`;
             });
             html += '</div>';
         }
-        
+
         messageDiv.innerHTML = html;
         this.chatMessages.appendChild(messageDiv);
         this.chatMessages.scrollTop = this.chatMessages.scrollHeight;
@@ -594,6 +695,47 @@ class AbleApp {
         } catch (error) {
             this.addChatMessage('system', `❌ Failed to configure MCP: ${error.message}`);
         }
+    }
+
+
+    // Visual Context Methods
+    async showVisualContext(documentId) {
+        try {
+            const response = await fetch(`${this.baseUrl}/documents/${documentId}/processing-info`);
+            const info = await response.json();
+
+            if (!info.multimodal_info || !info.multimodal_info.images) {
+                this.addChatMessage('system', '❌ No visual content found for this document');
+                return;
+            }
+
+            const images = info.multimodal_info.images;
+            let thumbnailsHtml = '<div class="visual-thumbnails">';
+
+            images.forEach((image, index) => {
+                const imageUrl = `${this.baseUrl}/sources/images/${image.filename}`;
+                thumbnailsHtml += `
+                    <div class="visual-thumbnail">
+                        <div class="filename">${image.filename}</div>
+                        <img src="${imageUrl}" alt="Document image ${index + 1}" onclick="window.open('${imageUrl}', '_blank')">
+                        <div class="description">${image.description || 'No description available'}</div>
+                    </div>
+                `;
+            });
+
+            thumbnailsHtml += '</div>';
+            this.visualModalContent.innerHTML = thumbnailsHtml;
+            this.visualModal.style.display = 'block';
+
+        } catch (error) {
+            console.error('Failed to load visual context:', error);
+            this.addChatMessage('system', `❌ Failed to load visual context: ${error.message}`);
+        }
+    }
+
+    closeVisualModal() {
+        this.visualModal.style.display = 'none';
+        this.visualModalContent.innerHTML = '';
     }
 }
 

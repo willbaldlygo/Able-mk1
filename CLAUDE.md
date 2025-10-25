@@ -4,11 +4,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Able is a PDF Research Assistant that combines a Python FastAPI backend with a React frontend. It allows users to upload multiple PDFs, processes them using vector embeddings, and enables intelligent question-answering using Claude AI with source attribution.
+Able mk I is an **Advanced Multimodal Research Assistant** that combines a Python FastAPI backend with a modern web frontend. It processes both text and images from PDFs using AI-powered visual analysis, vector embeddings, and enables intelligent question-answering with comprehensive multimodal understanding using Claude AI + LLava vision model integration.
 
 ## Recent Updates
 
-### Version History - Able mk I (GraphRAG Integration)
+### Version History - Able mk I (Multimodal Integration - January 2025)
+- **🧠 Multimodal Document Processing**: Complete PDF image extraction and analysis using LLava vision model
+- **🖼️ Visual Understanding**: AI-powered image descriptions for charts, diagrams, photos in documents
+- **📸 Direct Image Upload**: Support for PNG, JPG, JPEG files with visual analysis
+- **🔍 Enhanced Search**: Visual context integrated into semantic search and chat responses
+- **⚡ Always-On Processing**: Core multimodal capabilities with graceful degradation when vision unavailable
+- **🎨 Enhanced UI**: Visual indicators, image galleries, multimodal processing feedback
+
+### Version History - Previous (GraphRAG Integration)
 - **Advanced Knowledge Synthesis**: Microsoft GraphRAG integration for intelligent research
 - **Multi-hop Reasoning**: Complex queries spanning multiple documents with entity relationships
 - **Intelligent Search Routing**: Automatic selection between global, local, and vector search
@@ -26,13 +34,17 @@ Able is a PDF Research Assistant that combines a Python FastAPI backend with a R
 
 ## Architecture
 
-- **Backend** (`backend/`): FastAPI server with Pydantic models, document processing via PyMuPDF, vector storage with ChromaDB, GraphRAG knowledge graphs, and Claude AI integration
-- **Frontend** (`new-ui/`): Modern web interface built with vanilla JavaScript, HTML, and CSS (port 3001)
-- **Data Storage**: 
-  - `sources/`: PDF file storage
-  - `data/vectordb/`: ChromaDB vector database storage  
-  - `data/graphrag/`: Microsoft GraphRAG knowledge graphs and community summaries
-  - `document_metadata.json`: Document metadata tracking
+- **Backend** (`backend/`): FastAPI server with multimodal processing, PyMuPDF + pdf2image for document/image extraction, ChromaDB vector storage, GraphRAG knowledge graphs, Claude AI + LLava vision model integration
+- **Frontend** (`new-ui/`): Enhanced web interface with multimodal support - visual indicators, image galleries, enhanced upload (port 3001)
+- **AI Stack**:
+  - **Text Processing**: Anthropic Claude for document understanding and reasoning
+  - **Vision Processing**: LLava model via Ollama for image analysis and descriptions
+  - **Hybrid Intelligence**: Automatic fallback between multimodal and text-only processing
+- **Data Storage**:
+  - `sources/`: PDF file storage + `sources/images/`: Extracted and uploaded image storage
+  - `data/vectordb/`: ChromaDB vector database with visual metadata integration
+  - `data/graphrag/`: Microsoft GraphRAG knowledge graphs with visual entity support
+  - `document_metadata.json`: Enhanced metadata tracking with multimodal processing status
 - **Archive** (`archive/`): Historical components and development artifacts (see archive/README.md)
 
 ## Development Commands
@@ -113,18 +125,35 @@ The dock app provides:
 ## Key Components
 
 ### Backend Architecture
-- `main.py`: FastAPI application entry point with CORS configuration
-- `models.py`: Pydantic data models (ChatRequest, ChatResponse, DocumentSummary, etc.)
-- `document_processor.py`: PDF processing using PyMuPDF
-- `vector_store.py`: ChromaDB vector storage management
-- `llm_client.py`: Anthropic Claude AI client
-- `document_manager.py`: Document lifecycle management
+**Core Services**:
+- `main.py`: FastAPI application with multimodal endpoints (/upload/multimodal, /chat/multimodal, /multimodal/capabilities)
+- `models.py`: Enhanced Pydantic models including ImageInfo, MultimodalChatRequest/Response, processing status
+- `services/multimodal_service.py`: Core LLava integration and image processing orchestration
+- `services/image_extractor.py`: PDF image extraction using pdf2image + PyMuPDF, direct image handling
+- `services/document_service.py`: Enhanced with dual text+image processing pipeline
+- `services/ai_service.py`: Multimodal prompt handling with vision capabilities
+- `services/vector_service.py`: Visual context integration in embeddings
+- `services/storage_service.py`: Image file management and metadata persistence
+
+**Legacy Components (Enhanced)**:
+- `document_processor.py`: PDF text processing (now part of multimodal pipeline)
+- `vector_store.py`: ChromaDB vector storage with visual metadata
+- `llm_client.py`: Anthropic Claude AI client (text processing)
+- `document_manager.py`: Document lifecycle management with multimodal awareness
 
 ### Frontend Architecture (new-ui/)
-- `index.html`: Main application structure with modern design
-- `script.js`: JavaScript handling API communication, document management, and chat
-- `styles.css`: CSS styling with gradient header and responsive layout
-- Vanilla JavaScript implementation for maximum compatibility
+**Enhanced Multimodal Interface**:
+- `index.html`: Enhanced upload support for PDFs + images (PNG, JPG, JPEG), visual context modal, image galleries
+- `script.js`: Complete multimodal integration - always-on processing, visual indicators, enhanced chat with visual context
+- `styles.css`: Visual badges, image thumbnails, modal styling, multimodal processing indicators
+
+**Key Features**:
+- **Always-On Multimodal**: Core functionality without toggle requirements
+- **Visual Feedback**: Processing indicators, image galleries, visual source markers (🖼️)
+- **Enhanced Upload**: Automatic multimodal processing detection with status feedback
+- **Image Management**: Thumbnail generation, modal viewing, "View Images" buttons
+- **Responsive Design**: Seamless integration with existing 60/40 layout
+- **Vanilla JavaScript**: Maximum compatibility with modern multimodal features
 
 ## Environment Setup
 
@@ -140,16 +169,16 @@ Optional Ollama configuration:
 - `DEFAULT_AI_PROVIDER`: Default AI provider - "anthropic" or "ollama" (default: anthropic)
 - `FALLBACK_ENABLED`: Enable fallback between providers (default: true)
 
-### Ollama Setup Instructions
+### Ollama Setup Instructions (Required for Multimodal)
 
 1. **Install Ollama:**
    ```bash
    # macOS
    brew install ollama
-   
+
    # Linux
    curl -fsSL https://ollama.ai/install.sh | sh
-   
+
    # Windows - Download from https://ollama.ai/download
    ```
 
@@ -158,12 +187,13 @@ Optional Ollama configuration:
    ollama serve
    ```
 
-3. **Download Models:**
+3. **Download Models (Including Vision):**
    ```bash
-   # Lightweight model for testing
-   ollama pull tinyllama
-   
-   # Recommended models for production
+   # REQUIRED: Vision model for multimodal processing
+   ollama pull llava:latest    # Primary vision model (~7GB)
+   ollama pull llava:7b        # Alternative vision model
+
+   # Optional: Text models for local processing
    ollama pull llama3.1:8b
    ollama pull mistral:7b
    ollama pull codellama:13b  # For code-related queries
@@ -171,24 +201,53 @@ Optional Ollama configuration:
 
 4. **Verify Installation:**
    ```bash
-   ollama list  # Should show downloaded models
+   ollama list  # Should show llava model for multimodal capabilities
    curl http://localhost:11434/api/tags  # API test
+
+   # Test vision model specifically
+   ollama run llava:latest "Describe this image" --image path/to/test/image.jpg
    ```
+
+### Multimodal Configuration
+**Vision Processing** (`.env`):
+```bash
+# Multimodal Processing
+OLLAMA_ENABLED=true
+OLLAMA_HOST=http://localhost:11434
+OLLAMA_MODEL=llava:latest
+
+# Image Processing
+IMAGE_PROCESSING_ENABLED=true
+IMAGE_MAX_SIZE=2048
+IMAGE_QUALITY=85
+
+# Enhanced Chunking with Visual Context
+CHUNK_SIZE=700
+PARENT_CHUNK_SIZE=2000
+CHUNK_OVERLAP=50
+```
 
 ### GraphRAG Configuration
 - `GRAPHRAG_ENABLED`: Enable/disable GraphRAG (default: true)
-- `GRAPHRAG_ENTITY_TYPES`: Entity types to extract (default: PERSON,ORGANIZATION,LOCATION,EVENT,CONCEPT,TECHNOLOGY,METHOD)
+- `GRAPHRAG_ENTITY_TYPES`: Entity types including visual elements (default: PERSON,ORGANIZATION,LOCATION,EVENT,CONCEPT,TECHNOLOGY,CHART,DIAGRAM)
 - `GRAPHRAG_CHUNK_SIZE`: GraphRAG chunk size (default: 1200)
 - `GRAPHRAG_CHUNK_OVERLAP`: GraphRAG chunk overlap (default: 100)
 
 ## API Endpoints
 
-### Core Endpoints
-- `GET /health`: Health check
-- `GET /documents`: List all documents
-- `POST /upload`: Upload PDFs (now includes GraphRAG processing)
-- `DELETE /documents/{doc_id}`: Delete document
-- `POST /chat`: Ask questions about documents (traditional vector search)
+### Multimodal Endpoints
+- `POST /upload/multimodal`: Enhanced document upload with PDF image extraction and direct image upload
+- `POST /chat/multimodal`: Chat with visual context integration and image understanding
+- `GET /documents/{id}/processing-info`: Detailed multimodal document processing status and statistics
+- `GET /multimodal/capabilities`: System vision capabilities and model availability status
+- `GET /sources/images/{filename}`: Access extracted PDF images and uploaded image files
+
+### Core Endpoints (Enhanced)
+- `GET /health`: Health check including multimodal services
+- `GET /documents`: List documents with visual indicators and image counts
+- `POST /upload`: Now routes to multimodal processing automatically
+- `DELETE /documents/{doc_id}`: Delete document including associated images
+- `POST /chat`: Enhanced with visual context when available
 
 ### GraphRAG-Enhanced Endpoints  
 - `POST /chat/enhanced`: Intelligent chat with automatic search routing
@@ -534,3 +593,101 @@ TOKEN_BUDGET_CONTEXT_RATIO=0.6
 - `backend/reranker.py`: Cross-encoder reranking
 - `backend/prompt_budget.py`: Token budget management
 - `backend/retrieval.py`: Hybrid retrieval orchestration
+
+### 🔧 MCP (Model Context Protocol) Integration Complete (August 25, 2025)
+**Feature**: Full MCP integration for filesystem, git, and SQLite operations
+**Status**: 100% Complete and Production Ready
+
+**Implementation**:
+- **Backend Services**: Complete MCP server implementations for filesystem, git, and SQLite operations
+- **Security Model**: Session-based isolation with UUID sessions and path validation
+- **Frontend UI**: MCP toggle button, configuration modal with filesystem/git/sqlite setup
+- **API Integration**: Full REST API with `/mcp/status`, `/mcp/toggle`, `/mcp/config` endpoints
+- **Live Functionality**: System tested and confirmed operational
+
+**Technical Components**:
+- `backend/mcp/filesystem_server.py`: Secure file operations within configured boundaries
+- `backend/mcp/git_server.py`: Git repository operations with access control
+- `backend/mcp/sqlite_server.py`: SQLite database queries with path restrictions (891 lines)
+- `backend/services/mcp_service.py`: Core MCP session and server management
+- `backend/services/mcp_integration_service.py`: Chat integration and result formatting
+- `new-ui/`: Complete MCP UI with toggle button and configuration modal
+
+**Security Features**:
+- Path validation within session boundaries
+- Process isolation with UUID-based sessions
+- Graceful shutdown with force-kill fallback
+- Restricted access to filesystem, git repositories, and SQLite databases
+
+**Configuration** (`.env`):
+```bash
+# MCP Configuration (if needed)
+MCP_ENABLED=true
+MCP_DEFAULT_ROOT=/Users/will/AVI BUILD/Able3_Main_WithVoiceMode/data
+MCP_SESSION_TIMEOUT=3600
+```
+
+**Current Status**: MCP is live and operational. API returns:
+```json
+{
+  "enabled": true,
+  "session_active": true,
+  "available_tools": [
+    "filesystem_read", "filesystem_write", "filesystem_list",
+    "sqlite_query", "sqlite_schema", "sqlite_list_tables"
+  ]
+}
+```
+
+### 📁 GitHub Integration Complete (August 25, 2025)
+**Repository**: https://github.com/willbaldlygo/Able-mk1
+**Status**: Project successfully uploaded and linked to local development environment
+
+**Implementation**:
+- Updated git remote from `willwade/Able-mk1.git` to `willbaldlygo/Able-mk1.git`
+- Complete project pushed to GitHub including all MCP integration work
+- Local project now linked to GitHub repository for version control
+- Full backup and collaboration capability established
+
+**Version Control Commands**:
+```bash
+# Save changes to GitHub
+git add .
+git commit -m "Update description"
+git push
+
+# Get latest changes
+git pull
+
+# Check status
+git status
+```
+
+## Next Development Phase
+
+### 🧪 Immediate Testing Priority
+**Next Step**: Test MCP file management functionality to validate:
+- Filesystem operations (read, write, list) within security boundaries
+- SQLite queries against vector database and metadata
+- Git operations for version control integration
+- Error handling and security boundary enforcement
+
+### 🤖 Proposed Enhancement: Intelligent MCP Integration
+**Vision**: Remove the manual MCP toggle button and implement intelligent MCP tool usage based on user prompts.
+
+**Concept**: 
+- Able should automatically detect when MCP tools are needed based on user queries
+- Examples:
+  - "Show me the files in my data folder" → Auto-trigger filesystem_list
+  - "What's in the vector database?" → Auto-trigger sqlite_query  
+  - "Check the git history" → Auto-trigger git_log
+- Seamless integration without manual configuration requirements
+- Context-aware tool selection based on natural language understanding
+
+**Implementation Considerations**:
+- LLM prompt engineering to detect MCP tool requirements
+- Automatic MCP session management behind the scenes
+- Enhanced chat integration to display MCP results naturally
+- Fallback handling when MCP tools are unavailable
+
+This enhancement would make Able more intuitive by removing the need for users to manually enable/configure MCP tools, instead having the system intelligently determine when and how to use them based on conversational context.

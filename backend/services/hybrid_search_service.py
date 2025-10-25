@@ -241,10 +241,28 @@ class HybridSearchService:
             if request.include_entities:
                 enhanced_sources = await self._enhance_sources_with_entities(enhanced_sources, request)
             
-            # Generate answer using AI service
+            # Generate answer using AI service with formatting
             from services.ai_service import AIService
             ai_service = AIService()
-            ai_response = await ai_service.generate_response(chat_request)
+            
+            # Convert enhanced sources back to regular sources for AI service
+            regular_sources = []
+            for enhanced_source in enhanced_sources:
+                from models import SourceInfo
+                regular_source = SourceInfo(
+                    document_id=enhanced_source.document_id,
+                    document_name=enhanced_source.document_name,
+                    chunk_content=enhanced_source.chunk_content,
+                    relevance_score=enhanced_source.relevance_score
+                )
+                regular_sources.append(regular_source)
+            
+            # Use the enhanced response method that includes formatting
+            ai_response = ai_service.generate_enhanced_response(
+                question=request.question,
+                sources=enhanced_sources,
+                search_type="vector"
+            )
             
             return EnhancedChatResponse(
                 answer=ai_response.answer,

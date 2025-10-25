@@ -298,3 +298,71 @@ class MCPEnhancedChatResponse(BaseModel):
     mcp_tools_used: List[str] = Field(default_factory=list)
     mcp_results: List[MCPToolResult] = Field(default_factory=list)
     graph_insights: Optional[GraphSearchResult] = None
+
+# Multimodal Models
+
+class ImageInfo(BaseModel):
+    """Image information model."""
+    image_id: str
+    document_id: str
+    file_path: str
+    filename: str
+    image_type: str  # "pdf_page", "embedded", "direct_upload"
+    page_number: Optional[int] = None
+    width: int
+    height: int
+    file_size: int
+    extraction_method: str  # "pdf2image", "pymupdf", "direct_upload"
+    processed_at: datetime
+
+class MultimodalProcessingResult(BaseModel):
+    """Result of multimodal processing."""
+    success: bool
+    total_images: int
+    processed_images: int
+    failed_images: int
+    processing_time: Optional[float] = None
+    visual_descriptions: List[Optional[str]] = Field(default_factory=list)
+    error: Optional[str] = None
+
+class MultimodalChatRequest(BaseModel):
+    """Chat request with multimodal support."""
+    question: str
+    document_ids: Optional[List[str]] = None
+    include_visual_analysis: bool = True
+    image_paths: Optional[List[str]] = None
+
+class MultimodalSourceInfo(BaseModel):
+    """Source information with visual context."""
+    document_id: str
+    document_name: str
+    chunk_content: str
+    relevance_score: float
+    visual_context: Optional[str] = None
+    images: List[ImageInfo] = Field(default_factory=list)
+
+class MultimodalChatResponse(BaseModel):
+    """Chat response with multimodal information."""
+    answer: str
+    sources: List[MultimodalSourceInfo]
+    timestamp: datetime
+    visual_analysis_used: bool = False
+    multimodal_summary: Optional[MultimodalProcessingResult] = None
+
+class DocumentProcessingInfo(BaseModel):
+    """Extended document processing information."""
+    document_id: str
+    document_name: str
+    processing_type: str  # "text_only", "multimodal"
+    has_images: bool = False
+    image_count: int = 0
+    images: List[ImageInfo] = Field(default_factory=list)
+    visual_analysis_available: bool = False
+    processing_summary: Optional[MultimodalProcessingResult] = None
+
+class MultimodalUploadResponse(BaseModel):
+    """Upload response with multimodal processing information."""
+    success: bool
+    document: Optional[DocumentSummary] = None
+    processing_info: Optional[DocumentProcessingInfo] = None
+    message: str

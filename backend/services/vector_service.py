@@ -67,10 +67,16 @@ class VectorService:
         """Add document to vector database."""
         try:
             # Prepare chunks for vectorization
-            chunk_texts = [chunk.content for chunk in document.chunks]
+            # Include document title in chunk text for better title-based search
+            chunk_texts = []
+            for chunk in document.chunks:
+                # Combine title and content for embedding
+                enhanced_text = f"Document: {document.name}\n\n{chunk.content}"
+                chunk_texts.append(enhanced_text)
+
             chunk_ids = [chunk.id for chunk in document.chunks]
-            
-            # Generate embeddings
+
+            # Generate embeddings from enhanced text (title + content)
             embeddings = self.embedding_model.encode(chunk_texts).tolist()
             
             # Prepare metadata
@@ -84,10 +90,13 @@ class VectorService:
                     "end_char": chunk.end_char
                 })
             
+            # Store original content in documents field for retrieval
+            original_chunk_texts = [chunk.content for chunk in document.chunks]
+
             # Add to collection
             self.collection.add(
                 embeddings=embeddings,
-                documents=chunk_texts,
+                documents=original_chunk_texts,  # Store original content
                 metadatas=metadatas,
                 ids=chunk_ids
             )
@@ -96,12 +105,64 @@ class VectorService:
         except Exception:
             return False
     
+    def _is_title_query(self, query: str) -> bool:
+        """Check if query is looking for documents by title."""
+        title_indicators = [
+            "titled", "title", "named", "called", "document", "documents",
+            "begin with", "start with", "begins with", "starts with",
+            "Day 4", "Day 9", "DAY 4", "DAY 9"
+        ]
+        return any(indicator.lower() in query.lower() for indicator in title_indicators)
+
+    def _title_based_search(self, query: str, document_ids: Optional[List[str]] = None) -> List[SourceInfo]:
+        """Direct search by document titles."""
+        try:
+            results = []
+            all_docs = self.collection.get(include=["metadatas", "documents"])
+
+            for i, metadata in enumerate(all_docs['metadatas']):
+                if document_ids and metadata.get('document_id') not in document_ids:
+                    continue
+
+                doc_name = metadata.get('document_name', '')
+
+                # Check if document name matches query terms
+                query_terms = query.lower().split()
+                doc_name_lower = doc_name.lower()
+
+                # Score based on how many query terms match the title
+                matches = sum(1 for term in query_terms if term in doc_name_lower)
+                if matches > 0:
+                    # Higher score for more matches and shorter titles (more specific)
+                    relevance_score = (matches / len(query_terms)) * (10 / max(len(doc_name), 10))
+
+                    source_info = SourceInfo(
+                        document_id=metadata['document_id'],
+                        document_name=doc_name,
+                        chunk_content=all_docs['documents'][i],
+                        relevance_score=relevance_score
+                    )
+                    results.append(source_info)
+
+            # Sort by relevance and return top results
+            results.sort(key=lambda x: x.relevance_score, reverse=True)
+            return results[:config.search_results]
+
+        except Exception:
+            return []
+
     def strategic_search(self, query: str, document_ids: Optional[List[str]] = None) -> List[SourceInfo]:
         """Agentic search with query analysis and strategic retrieval."""
         try:
+            # Check if this is a title-based query first
+            if self._is_title_query(query):
+                title_results = self._title_based_search(query, document_ids)
+                if title_results:
+                    return title_results
+
             # Step 1: Analyze the query to understand intent
             intent = self.query_analyzer.analyze_query(query)
-            
+
             # Step 2: Execute multiple search strategies
             all_results = []
             

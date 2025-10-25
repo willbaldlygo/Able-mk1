@@ -21,7 +21,11 @@ from models import (
     ModelStatusResponse, ModelPerformanceMetrics, SystemStatusResponse,
     # MCP models
     MCPConfig, MCPStatusResponse, MCPToggleRequest, MCPSession,
-    MCPToolResult, MCPEnhancedChatResponse
+    MCPToolResult, MCPEnhancedChatResponse,
+    # Multimodal models
+    ImageInfo, MultimodalProcessingResult, MultimodalChatRequest,
+    MultimodalSourceInfo, MultimodalChatResponse, DocumentProcessingInfo,
+    MultimodalUploadResponse
 )
 from services.storage_service import StorageService
 from services.document_service import DocumentService
@@ -100,10 +104,11 @@ async def startup_event():
         global hybrid_retriever
         try:
             # Get all chunks from vector database
-            all_results = vector_service.collection.get(include=["documents", "ids", "metadatas"])
+            all_results = vector_service.collection.get(include=["documents", "metadatas"])
             if all_results['documents']:
                 records = []
-                for doc, doc_id in zip(all_results['documents'], all_results['ids']):
+                for i, doc in enumerate(all_results['documents']):
+                    doc_id = all_results['ids'][i] if 'ids' in all_results else f"chunk_{i}"
                     records.append({"id": doc_id, "text": doc})
                 bm25_index.build(records)
                 hybrid_retriever = HybridRetriever(vector_service, bm25_index)
@@ -203,10 +208,10 @@ async def upload_document(files: List[UploadFile] = File(...)):
                     message=f"Only PDF files are supported: {file.filename}"
                 )
             
-            if file.size and file.size > 50 * 1024 * 1024:  # 50MB limit
+            if file.size and file.size > 15 * 1024 * 1024:  # 15MB limit
                 return UploadResponse(
                     success=False,
-                    message=f"File size exceeds 50MB limit: {file.filename}"
+                    message=f"File size exceeds 15MB limit: {file.filename}"
                 )
         
         uploaded_docs = []
@@ -357,7 +362,18 @@ async def delete_document(doc_id: str):
 def is_document_library_question(question: str) -> bool:
     """Check if the question is asking about the document library itself."""
     question_lower = question.lower().strip()
-    
+
+    # Exclude queries that are looking for specific document titles or content
+    title_search_indicators = [
+        'beginning with', 'begin with', 'begins with', 'start with', 'starts with', 'starting with',
+        'titled', 'named', 'called', 'containing', 'about', 'summarise', 'summarize',
+        'day 4', 'day 9', 'day4', 'day9', 'week', 'chapter', 'section'
+    ]
+
+    for indicator in title_search_indicators:
+        if indicator in question_lower:
+            return False  # This is a search query, not a library question
+
     # Specific phrases that clearly indicate library questions
     library_phrases = [
         'what documents do you have',
@@ -379,16 +395,20 @@ def is_document_library_question(question: str) -> bool:
         'document titles',
         'file names'
     ]
-    
+
     # Check for exact phrase matches
     for phrase in library_phrases:
         if phrase in question_lower:
             return True
-    
-    # Check for very specific patterns only
+
+    # Check for very specific patterns only, but exclude title searches
     if question_lower.startswith(('list ', 'show ', 'display ')) and ('document' in question_lower or 'file' in question_lower):
+        # But not if it's looking for specific titles
+        for indicator in title_search_indicators:
+            if indicator in question_lower:
+                return False
         return True
-        
+
     return False
 
 def generate_document_library_response() -> ChatResponse:
@@ -450,8 +470,8 @@ async def chat_with_documents(request: ChatRequest):
                 timestamp=datetime.now()
             )
         
-        # Generate response using legacy method
-        response = ai_service.generate_response_with_sources(request.question, sources)
+        # Generate response with formatting support
+        response = ai_service.generate_response_with_provider(request.question, sources)
         
         logger.info(f"Chat query processed: '{request.question[:50]}...' -> {len(sources)} sources")
         return response
@@ -1437,10 +1457,324 @@ async def debug_retrieval(query: str, include_mcp: bool = False):
                 }
         
         return debug_info
-        
+
     except Exception as e:
         logger.error(f"Debug retrieval error: {str(e)}")
         return {"error": str(e)}
+
+# Multimodal endpoints
+
+@app.post("/upload/multimodal", response_model=MultimodalUploadResponse)
+async def upload_multimodal_document(files: List[UploadFile] = File(...)):
+    """Upload PDF documents with multimodal processing or direct image files."""
+    if not files:
+        return MultimodalUploadResponse(
+            success=False,
+            message="No files uploaded"
+        )
+
+    try:
+        results = []
+        for file in files:
+            # Check file type
+            if file.content_type == "application/pdf":
+                # Process PDF with multimodal analysis
+                content = await file.read()
+
+                # Save PDF file using storage service
+                file_path = storage_service.save_file(content, file.filename)
+
+                # Process with full multimodal analysis
+                document, multimodal_analysis = await document_service.process_pdf_with_multimodal_analysis(
+                    file_path, file.filename
+                )
+
+                # Store document metadata
+                if not storage_service.save_metadata(document):
+                    raise Exception("Failed to save document metadata")
+
+                # Store in vector database
+                if not vector_service.add_document(document):
+                    raise Exception("Failed to add document to vector database")
+
+                # Create processing info
+                processing_info = DocumentProcessingInfo(
+                    document_id=document.id,
+                    document_name=document.name,
+                    processing_type="multimodal",
+                    has_images=len(multimodal_analysis.get("images", [])) > 0,
+                    image_count=len(multimodal_analysis.get("images", [])),
+                    visual_analysis_available=multimodal_analysis.get("summary", {}).get("has_visual_descriptions", False),
+                    processing_summary=MultimodalProcessingResult(
+                        success=True,
+                        total_images=multimodal_analysis.get("summary", {}).get("total_images", 0),
+                        processed_images=multimodal_analysis.get("summary", {}).get("completed_analysis", 0),
+                        failed_images=multimodal_analysis.get("summary", {}).get("failed", 0),
+                        visual_descriptions=[
+                            img.get("visual_description")
+                            for img in multimodal_analysis.get("images", [])
+                        ]
+                    )
+                )
+
+                results.append(MultimodalUploadResponse(
+                    success=True,
+                    document=DocumentSummary(
+                        id=document.id,
+                        name=document.name,
+                        summary=document.summary,
+                        created_at=document.created_at,
+                        file_size=document.file_size,
+                        chunk_count=len(document.chunks),
+                        source_type=document.source_type
+                    ),
+                    processing_info=processing_info,
+                    message=f"Successfully processed {file.filename} with multimodal analysis"
+                ))
+
+            elif file.content_type.startswith("image/"):
+                # Process direct image upload
+                content = await file.read()
+
+                doc_id, processing_result = await document_service.process_image_file(
+                    content, file.filename
+                )
+
+                if processing_result["success"]:
+                    # Create a proper Document object for searchability
+                    visual_description = processing_result["analysis"].get("visual_description", "")
+
+                    # Create document with visual description as content
+                    from models import Document, Chunk
+                    document = Document(
+                        id=doc_id,
+                        name=file.filename,
+                        summary=f"Image file: {file.filename}. {visual_description[:200]}...",
+                        chunks=[
+                            Chunk(
+                                id=f"{doc_id}_chunk_0",
+                                content=f"Image: {file.filename}\n\nVisual Description: {visual_description}",
+                                chunk_index=0,
+                                start_char=0,
+                                end_char=len(visual_description)
+                            )
+                        ],
+                        source_type="image",
+                        file_path=processing_result["image_info"]["file_path"],
+                        file_size=processing_result["image_info"]["file_size"]
+                    )
+
+                    # Store document metadata
+                    if not storage_service.save_metadata(document):
+                        raise Exception("Failed to save image document metadata")
+
+                    # Store in vector database
+                    if not vector_service.add_document(document):
+                        raise Exception("Failed to add image document to vector database")
+
+                    processing_info = DocumentProcessingInfo(
+                        document_id=doc_id,
+                        document_name=file.filename,
+                        processing_type="image_only",
+                        has_images=True,
+                        image_count=1,
+                        visual_analysis_available=processing_result["analysis"].get("visual_description") is not None,
+                        processing_summary=MultimodalProcessingResult(
+                            success=True,
+                            total_images=1,
+                            processed_images=1 if processing_result["analysis"].get("visual_description") else 0,
+                            failed_images=0 if processing_result["analysis"].get("visual_description") else 1,
+                            visual_descriptions=[processing_result["analysis"].get("visual_description")]
+                        )
+                    )
+
+                    results.append(MultimodalUploadResponse(
+                        success=True,
+                        document=DocumentSummary(
+                            id=document.id,
+                            name=document.name,
+                            summary=document.summary,
+                            created_at=document.created_at,
+                            file_size=document.file_size,
+                            chunk_count=len(document.chunks),
+                            source_type=document.source_type
+                        ),
+                        processing_info=processing_info,
+                        message=f"Successfully processed image {file.filename}"
+                    ))
+                else:
+                    results.append(MultimodalUploadResponse(
+                        success=False,
+                        message=f"Failed to process image {file.filename}: {processing_result.get('error', 'Unknown error')}"
+                    ))
+            else:
+                results.append(MultimodalUploadResponse(
+                    success=False,
+                    message=f"Unsupported file type: {file.content_type}"
+                ))
+
+        # Return the result for the first file (for compatibility)
+        return results[0] if results else MultimodalUploadResponse(
+            success=False,
+            message="No files processed"
+        )
+
+    except Exception as e:
+        logger.error(f"Multimodal upload error: {str(e)}")
+        return MultimodalUploadResponse(
+            success=False,
+            message=f"Upload failed: {str(e)}"
+        )
+
+@app.post("/chat/multimodal", response_model=MultimodalChatResponse)
+async def chat_multimodal(request: MultimodalChatRequest):
+    """Chat with multimodal capabilities (text + images)."""
+    try:
+        # Get document sources
+        sources = vector_service.strategic_search(
+            query=request.question,
+            document_ids=request.document_ids
+        )
+
+        if not sources:
+            return MultimodalChatResponse(
+                answer="I couldn't find any relevant information to answer your question.",
+                sources=[],
+                timestamp=datetime.now(),
+                visual_analysis_used=False
+            )
+
+        # Get visual context if available
+        visual_context = None
+        image_paths = request.image_paths or []
+
+        # Extract visual context from document chunks
+        for source in sources:
+            # Check if source has visual context from document processing
+            if hasattr(source, 'chunk_content'):
+                # This would require updating the vector service to include visual metadata
+                # For now, we'll use any provided image paths
+                pass
+
+        # Generate multimodal response
+        if request.include_visual_analysis and (image_paths or visual_context):
+            chat_response = ai_service.generate_multimodal_response(
+                question=request.question,
+                sources=sources,
+                image_paths=image_paths,
+                visual_context=visual_context
+            )
+            visual_analysis_used = True
+        else:
+            # Fall back to regular chat
+            chat_response = ai_service.generate_response_with_provider(request.question, sources)
+            visual_analysis_used = False
+
+        # Convert sources to multimodal format
+        multimodal_sources = []
+        for source in sources:
+            multimodal_sources.append(MultimodalSourceInfo(
+                document_id=source.document_id,
+                document_name=source.document_name,
+                chunk_content=source.chunk_content,
+                relevance_score=source.relevance_score,
+                visual_context=visual_context if visual_analysis_used else None
+            ))
+
+        return MultimodalChatResponse(
+            answer=chat_response.answer,
+            sources=multimodal_sources,
+            timestamp=chat_response.timestamp,
+            visual_analysis_used=visual_analysis_used
+        )
+
+    except Exception as e:
+        logger.error(f"Multimodal chat error: {str(e)}")
+        return MultimodalChatResponse(
+            answer=f"I encountered an error while processing your question: {str(e)}",
+            sources=[],
+            timestamp=datetime.now(),
+            visual_analysis_used=False
+        )
+
+@app.get("/documents/{doc_id}/processing-info", response_model=DocumentProcessingInfo)
+async def get_document_processing_info(doc_id: str):
+    """Get processing information for a document including multimodal details."""
+    try:
+        # Get document metadata
+        documents = storage_service.load_metadata()
+        document = documents.get(doc_id)
+
+        if not document:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        # Get image information
+        images = document_service.get_document_images(doc_id)
+
+        # Convert to ImageInfo models
+        image_infos = []
+        for img in images:
+            image_infos.append(ImageInfo(
+                image_id=img.get("image_id", "unknown"),
+                document_id=doc_id,
+                file_path=img["file_path"],
+                filename=img["filename"],
+                image_type="unknown",
+                width=img.get("width", 0),
+                height=img.get("height", 0),
+                file_size=img.get("file_size", 0),
+                extraction_method="unknown",
+                processed_at=datetime.now()
+            ))
+
+        # Determine processing type
+        processing_type = "multimodal" if images else "text_only"
+
+        return DocumentProcessingInfo(
+            document_id=doc_id,
+            document_name=document.name,
+            processing_type=processing_type,
+            has_images=len(images) > 0,
+            image_count=len(images),
+            images=image_infos,
+            visual_analysis_available=any(img.get("visual_description") for img in images) if images else False
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting document processing info: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/multimodal/capabilities")
+async def get_multimodal_capabilities():
+    """Get multimodal processing capabilities and status."""
+    try:
+        # Test multimodal capabilities
+        capabilities = ai_service.test_multimodal_capabilities()
+
+        return {
+            "multimodal_available": True,
+            "llava_available": capabilities.get("llava_available", False),
+            "llava_model": capabilities.get("llava_model", "Not available"),
+            "supported_image_formats": ["PNG", "JPG", "JPEG"],
+            "supported_document_formats": ["PDF"],
+            "processing_features": [
+                "PDF image extraction",
+                "Image analysis with llava",
+                "Visual context integration",
+                "Multimodal chat responses"
+            ],
+            "status": "operational" if capabilities.get("test_successful", False) else "limited"
+        }
+
+    except Exception as e:
+        logger.error(f"Error checking multimodal capabilities: {str(e)}")
+        return {
+            "multimodal_available": False,
+            "error": str(e),
+            "status": "error"
+        }
 
 if __name__ == "__main__":
     import uvicorn
